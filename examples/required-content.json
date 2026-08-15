@@ -1,0 +1,1 @@
+{"enabled":true,"radius":5000,"boundaryShape":"CIRCLE","requiredBiomes":[{"selector":"minecraft:deep_dark","minInstances":1,"minArea":65536,"minDistance":500,"minEdgeDistance":300}],"requiredStructures":[{"selector":"minecraft:ruined_portal","minCount":1,"maxCount":1,"minDistance":500,"minEdgeDistance":300,"minSpacingFromSelf":1000}],"maxPlannerAttempts":20000}

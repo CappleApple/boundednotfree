@@ -1,0 +1,1 @@
+{"enabled":true,"radius":5000,"boundaryShape":"CIRCLE","rimEnabled":true,"rimWidth":384,"rimPlacementMode":"PREFER","rimSelectors":["#c:is_mountain"],"rimInfluenceStrength":1.0,"rimBlendWidth":192,"outsideMode":"VOID","biomeLayout":"VANILLA"}

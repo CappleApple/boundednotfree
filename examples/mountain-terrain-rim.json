@@ -1,0 +1,22 @@
+{
+  "biomeGroups": {
+    "mountains": [
+      "#minecraft:is_mountain",
+      "#c:is_mountain/peak",
+      "#c:is_mountain/slope"
+    ]
+  },
+  "dimension": {
+    "enabled": true,
+    "radius": 2500,
+    "boundaryShape": "CIRCLE",
+    "rimEnabled": true,
+    "rimWidth": 256,
+    "rimPlacementMode": "PREFER",
+    "rimSelectors": ["group:mountains"],
+    "rimInfluenceStrength": 1.0,
+    "rimBlendWidth": 128,
+    "outsideMode": "VOID",
+    "biomeLayout": "VANILLA"
+  }
+}

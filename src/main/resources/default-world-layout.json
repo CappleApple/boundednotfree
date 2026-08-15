@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "requiredContentFailurePolicy": "WARN",
+  "biomeGroups": {
+    "mountains": ["#c:is_mountain"],
+    "oceans": ["#minecraft:is_ocean"]
+  },
+  "structureGroups": {},
+  "continentProfiles": {},
+  "dimensions": {
+    "minecraft:overworld": {
+      "enabled": false,
+      "centerX": 0,
+      "centerZ": 0,
+      "radius": 5000,
+      "boundaryShape": "CIRCLE",
+      "rimEnabled": false,
+      "rimWidth": 256,
+      "rimPlacementMode": "PREFER",
+      "rimSelectors": ["group:mountains"],
+      "rimInfluenceStrength": 1.0,
+      "rimBlendWidth": 128,
+      "outsideMode": "NORMAL",
+      "gameplayBorder": "NONE",
+      "biomeFilterMode": "BLACKLIST",
+      "biomeFilter": [],
+      "invalidBiomeBehavior": "NEAREST_ALLOWED",
+      "fallbackBiome": "minecraft:plains",
+      "biomeRules": [],
+      "requiredBiomes": [],
+      "structureFilterMode": "BLACKLIST",
+      "structureFilter": [],
+      "structureRules": [],
+      "requiredStructures": [],
+      "biomeLayout": "VANILLA",
+      "progressionZonesEnabled": false,
+      "progressionZones": {},
+      "maxPlannerAttempts": 20000,
+      "lockLayoutAfterWorldCreation": true
+    },
+    "minecraft:the_nether": { "enabled": false },
+    "minecraft:the_end": { "enabled": false }
+  }
+}

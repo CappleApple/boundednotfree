@@ -1,0 +1,1 @@
+{"enabled":true,"radius":5000,"boundaryShape":"STAR","starPoints":7,"starInnerRadius":2600,"starOuterRadius":5000,"progressionZonesEnabled":true,"progressionZones":{"inner":{"minDistance":0,"maxDistance":0.45},"outer":{"minDistance":0.45,"maxDistance":1}}}

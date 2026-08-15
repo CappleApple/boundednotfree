@@ -1,0 +1,1 @@
+{"enabled":true,"radius":5000,"boundaryShape":"ORGANIC","biomeLayout":"CONTINENTS","continentCount":4,"minRegionRadius":700,"maxRegionRadius":1400,"minRegionSpacing":900,"profileSequence":["woodland","grassland"],"betweenRegionSelectors":["#minecraft:is_ocean"]}
