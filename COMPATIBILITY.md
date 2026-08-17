@@ -34,10 +34,15 @@ Sable observes live `LevelChunk.setBlockState` calls and may query neighboring c
 
 Biolith's injected biome source remains visible to Bounded Not Free through its retained `MultiNoiseBiomeSource` delegate. The exact-pack test with Biolith 3.0.14 discovered all 1,080 active climate points and exercised both vanilla-compatible and Tectonic terrain paths. C2ME 0.4.0-alpha.0.120 automatically disabled its own incompatible End-biome cache when Biolith was present; this is C2ME's compatibility guard, not a Bounded Not Free failure.
 
-## Test matrix through 1.3
+## Forgified Fabric API
+
+Fabric Biome API attaches the world seed to Minecraft's climate sampler after `RandomState` construction. When Bounded Not Free installs an influenced climate sampler, it copies that optional seed state from the original sampler through Fabric's runtime hook. Forgified Fabric API remains optional and is neither linked nor bundled.
+
+## Test matrix through 1.3.1
 
 | Environment | Result |
 | --- | --- |
+| Forgified Fabric API 0.116.15+2.3.3+1.21.1 with the exact Tectonic/C2ME/Biolith/Regions Unexplored/Supplementaries stack below | Fabric Biome API's seed was copied to the influenced climate sampler; a fresh world completed spawn generation, reached `Done`, saved every dimension, and shut down cleanly without the `fabric_getSeed` null-unboxing crash. |
 | NeoForge 21.1.244, vanilla Overworld | `CLIMATE_GRAPH`; fresh dedicated server started and generated the boundary test strip; barrier bottom/top, non-barrier interior, outside void, mountain terrain, and mountain biome assertions passed; clean save and shutdown |
 | Supplementaries 3.8.9 + Moonlight 3.3.4 + C2ME 0.3.0+alpha.0.93 + Chunky 1.4.16 | A fresh radius-384 ocean-only `CONTINENTS` world generated 2,601 chunks in 10 seconds. All 425,385 measured interior columns had an ocean surface at or below Y=68 (95th percentile Y=62; no dry terrain above Y=80), and all 186 wholly outside full chunks contained zero non-air blocks; clean save and shutdown |
 | C2ME 0.3.0+alpha.0.93 density compiler forced on, vanilla Overworld + Chunky 1.4.16 | `CLIMATE_GRAPH+C2ME_DFC`; 1,089 requested chunks completed in 6 seconds; barrier/void and terrain assertions passed; clean save and shutdown |

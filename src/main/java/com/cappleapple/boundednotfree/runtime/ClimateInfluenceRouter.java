@@ -24,6 +24,7 @@ public final class ClimateInfluenceRouter {
 
     public static Result install(RandomState state, DimensionPlan plan, List<Climate.ParameterPoint> spawnTargets) {
         NoiseRouter activeRouter = state.router();
+        Climate.Sampler activeSampler = state.sampler();
         Result result;
         if (!plan.terrainInfluenceReady()) {
             result = new Result(activeRouter, Map.of(), "NATIVE");
@@ -61,10 +62,21 @@ public final class ClimateInfluenceRouter {
         }
         result = applyRimTerrainStyle(result, plan);
         RandomStateAccessor accessor = (RandomStateAccessor)(Object)state;
-        accessor.boundednotfree$setRouter(result.router());
         NoiseRouter router = result.router();
-        accessor.boundednotfree$setSampler(new Climate.Sampler(router.temperature(), router.vegetation(), router.continents(),
-                router.erosion(), router.depth(), router.ridges(), spawnTargets));
+        Climate.Sampler replacementSampler = new Climate.Sampler(router.temperature(), router.vegetation(), router.continents(),
+                router.erosion(), router.depth(), router.ridges(), spawnTargets);
+        ClimateSamplerCompat.Result samplerCompat = ClimateSamplerCompat.copyFabricSeed(activeSampler, replacementSampler);
+        if (samplerCompat == ClimateSamplerCompat.Result.FAILED) {
+            BoundedNotFree.LOGGER.warn("Fabric biome sampler hooks were present, but their world seed could not be copied. "
+                    + "Preserving the provider router and sampler instead of installing an unseeded replacement.");
+            result = new Result(activeRouter, Map.of(), "PRESERVED+FABRIC_SEED");
+            router = activeRouter;
+            replacementSampler = activeSampler;
+        } else if (samplerCompat == ClimateSamplerCompat.Result.COPIED) {
+            BoundedNotFree.LOGGER.info("Preserved the Fabric biome sampler world seed on the influenced climate sampler");
+        }
+        accessor.boundednotfree$setRouter(router);
+        accessor.boundednotfree$setSampler(replacementSampler);
         plan.recordClimateRouter(result.replacements(), result.strategy());
         return result;
     }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1 - 2026-08-17
+
+### Fixed
+
+- Fixed world creation crashing with Forgified Fabric API because the influenced replacement climate sampler did not inherit Fabric Biome API's world seed.
+
 ## 1.3 - 2026-08-17
 
 ### Added
