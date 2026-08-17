@@ -7,7 +7,7 @@ It is intended for procedural modpack worlds that need a reproducible geography 
 ## Install
 
 1. Install NeoForge 21.1.244 or newer for Minecraft 1.21.1.
-2. Put `boundednotfree-1.0.1.jar` in the server's and clients' `mods` directories.
+2. Put `boundednotfree-1.3.jar` in the server's and clients' `mods` directories.
 3. Start once to create `config/boundednotfree/world-layout.json`.
 4. Stop the server, edit that file, set the desired dimensions to `"enabled": true`, then create a new world.
 
@@ -18,10 +18,12 @@ The generated default is disabled and conservative. Existing chunks are never re
 - Independent Overworld, Nether, End, or custom-dimension activation.
 - Circle, square, diamond, hexagon, rounded-square, polygon, star, and deterministic organic boundaries.
 - Separate biome rim, terrain outside mode, and optional square/custom-shape gameplay border.
+- Independent deterministic whole-column dithering and three-dimensional block dissolution for `VOID` edges, with no terrain beyond the nominal boundary.
 - Exact IDs, `#tags`, and named `group:` selectors for biomes and structures.
 - Whitelists/blacklists, deterministic rule precedence, distance/edge/profile/zone constraints, and bounded required-content planning.
 - Vanilla, radial, continent, Voronoi, climate-band, and archipelago biome layouts.
 - Provider-native rim terrain influence with smooth falloff and `PREFER` or `REQUIRE` biome placement.
+- Optional provider-independent `CAVE_WALL` rims that expose a tall rock cross-section with coherent cave pockets and tunnels opening onto the void.
 - Optional full-height, one-block-thick barrier-block walls that follow the exact configured boundary shape.
 - Deterministic saved layout seed/hash, optional per-world plan locking, SVG/JSON preview export, and a read-only Java API.
 
@@ -36,11 +38,11 @@ All commands require permission level 2.
 
 ## Architecture and compatibility
 
-Biome selection delegates to the active generator's original resolver, then applies the configured layout. Structure filtering stays inside vanilla's standard structure-start path. For rim influence, the mod reads the finalized multi-noise parameter list after mod/datapack injection and biases terrain-bearing climate fields toward a selected provider-native point. Temperature and humidity remain local so the active biome source can choose associated variants.
+Biome selection delegates to the active generator's original resolver, then applies the configured layout. When a macro region restricts the available biome pool, an already-accepted provider biome is retained; otherwise the nearest candidate is selected from the provider's finalized temperature, humidity, continentalness, erosion, depth, and weirdness parameters. The same region decision constrains terrain-bearing climate fields, so a profile's ocean, lowland, and mountain choices agree with the terrain underneath them. Structure filtering stays inside vanilla's standard structure-start path. For rim influence, the mod reads the finalized multi-noise parameter list after mod/datapack injection and biases terrain-bearing climate fields toward a selected provider-native point. Temperature and humidity remain local so the active biome source can choose associated variants.
 
-Vanilla-like generators use direct climate-graph influence. If C2ME has already compiled that graph, the mod recovers C2ME's retained fallback graph, applies the influence in optimizer-visible vanilla density arithmetic, and recompiles it through the installed C2ME runtime. If a provider such as Tectonic decouples terrain density from those fields, the mod samples only provider terrain noise at native block scale, keeps caves/subsurface systems local, and blends independent terrain branches through the rim. The outside-void pass runs inside vanilla's existing post-unlock terrain completion stage, preserving C2ME's threaded future pipeline.
+Vanilla-like generators use direct climate-graph influence. If C2ME has already compiled that graph, the mod recovers C2ME's retained fallback graph, applies the influence in optimizer-visible vanilla density arithmetic, and recompiles it through the installed C2ME runtime. For Tectonic, the mod finds and ranks intact provider-native terrain patches for the chosen biomes, then redirects Tectonic's own continentalness, erosion, and ridge parameter noises inside its original terrain-and-cave graph. This preserves the provider's nonlinear density relationships instead of interpolating two complete final-density fields. Unknown density-decoupled providers use a conservative terrain-noise sampling fallback. The outside-void pass attaches to the generator's post-unlock completion future, preserving C2ME's threaded pipeline. Later writes through `WorldGenRegion` are rejected, and a final new-chunk promotion pass removes any remaining outside blocks or restores barrier columns before the chunk becomes live.
 
-C2ME's default configuration supports full Tectonic rim terrain. If C2ME's optional experimental density-function compiler is manually enabled for a density-decoupled provider, Bounded Not Free preserves that provider's compiled terrain and falls back to biome-only rim influence; this prevents fragmentation. No C2ME, Chunky, Tectonic, or Regions Unexplored classes are compiled into or bundled with this mod. Custom non-noise generators and biome sources that do not expose a multi-noise delegate are reported by validation and left unchanged.
+C2ME's default configuration and its optional density-function compiler support full Tectonic rim and macro terrain. Bounded Not Free understands both the legacy compiler and C2ME 0.4's shared JVM compilation context; if a future compiler API cannot safely recompile the selected influence strategy, the mod preserves the provider's compiled terrain and reports the missing influence instead of risking corruption. No C2ME, Chunky, Tectonic, or Regions Unexplored classes are compiled into or bundled with this mod. Custom non-noise generators and biome sources that do not expose a multi-noise delegate are reported by validation and left unchanged.
 
 See [configuration](docs/CONFIGURATION.md), [API](docs/API.md), [compatibility notes](COMPATIBILITY.md), [examples](examples/README.md), and the honest [deferred-work list](TODO.md).
 
@@ -53,4 +55,4 @@ Use Java 21:
 .\gradlew.bat runServer
 ```
 
-The test suite covers all boundary shapes, barrier-edge selection, rim falloff behavior, polygon/star validation, and configuration seed/default behavior. Release gates also launch fresh dedicated servers with vanilla, Tectonic, Regions Unexplored/Lithostitched, and C2ME/Chunky forced pre-generation stacks.
+The test suite covers all boundary shapes, boundary write policy, barrier-edge selection, rim falloff and cave-wall density behavior, polygon/star validation, and configuration seed/default behavior. Release gates also launch fresh dedicated servers with vanilla, Supplementaries/Moonlight, Tectonic, Regions Unexplored/Lithostitched, and C2ME/Chunky generation stacks.

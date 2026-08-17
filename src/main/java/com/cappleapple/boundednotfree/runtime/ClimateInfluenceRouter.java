@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Wraps the active provider's climate fields in-place so terrain density and biome resolution see the same influence. */
 public final class ClimateInfluenceRouter {
@@ -23,38 +24,42 @@ public final class ClimateInfluenceRouter {
 
     public static Result install(RandomState state, DimensionPlan plan, List<Climate.ParameterPoint> spawnTargets) {
         NoiseRouter activeRouter = state.router();
-        PreparedRouter prepared = prepare(activeRouter);
-        Result graphResult = wrap(prepared.router(), plan);
-        if (prepared.c2meCompiled() && terrainCoupled(graphResult.replacements())) {
-            NoiseRouter compiled = compileWithC2me(graphResult.router());
-            graphResult = new Result(compiled, graphResult.replacements(),
-                    compiled == graphResult.router() ? "CLIMATE_GRAPH" : "CLIMATE_GRAPH+C2ME_DFC");
-        }
         Result result;
-        if (terrainCoupled(graphResult.replacements())) {
-            result = graphResult;
-        } else if (prepared.c2meCompiled()) {
-            // C2ME's optional density-function compiler makes third-party provider graphs opaque.
-            // Sampling its recovered fallback graph while DFC's NoiseChunk mixins remain active can
-            // change bulk-evaluation semantics and create missing terrain. Keep the provider's
-            // compiled terrain intact and apply the rim to its exposed climate roots only. C2ME's
-            // normal threaded chunk scheduling is independent of this experimental DFC option.
-            NoiseRouter compiled = compileWithC2me(graphResult.router());
-            if (compiled == graphResult.router()) {
-                result = new Result(activeRouter, Map.of(), "PRESERVED+C2ME_DFC");
-                BoundedNotFree.LOGGER.warn("C2ME density-function compilation hides this provider's terrain climate graph, "
-                        + "and compatible climate-only recompilation was unavailable. Preserving the compiled provider "
-                        + "terrain without rim influence; disable C2ME's experimental useDensityFunctionCompiler option "
-                        + "to enable provider-native rim terrain.");
-            } else {
-                result = new Result(compiled, graphResult.replacements(), "CLIMATE_ONLY+C2ME_DFC");
-                BoundedNotFree.LOGGER.warn("C2ME density-function compilation hides this provider's terrain climate graph; "
-                        + "using biome-only rim influence to preserve terrain integrity. Disable C2ME's experimental "
-                        + "useDensityFunctionCompiler option to enable provider-native rim terrain.");
-            }
+        if (!plan.terrainInfluenceReady()) {
+            result = new Result(activeRouter, Map.of(), "NATIVE");
         } else {
-            result = providerSampled(prepared.router(), plan);
+            PreparedRouter prepared = prepare(activeRouter);
+            Result graphResult = wrap(prepared.router(), plan);
+            if (prepared.c2meCompiled() && terrainCoupled(graphResult.replacements())) {
+                NoiseRouter compiled = compileWithC2me(graphResult.router());
+                graphResult = new Result(compiled, graphResult.replacements(),
+                        compiled == graphResult.router() ? "CLIMATE_GRAPH" : "CLIMATE_GRAPH+C2ME_DFC");
+            }
+            if (terrainCoupled(graphResult.replacements())) {
+                result = graphResult;
+            } else if (prepared.c2meCompiled()) {
+                // Density-decoupled providers such as Tectonic need provider-coordinate sampling.
+                // Recompile that sampled fallback graph through the active C2ME generation API so its
+                // bulk-evaluation contract remains intact. C2ME 0.4 moved the API into gen.jvm and
+                // compiles all router roots in one shared context; older releases use BytecodeGen.compile.
+                plan.prepareProviderSamples();
+                Result sampled = providerSampled(prepared.router(), plan);
+                NoiseRouter compiled = compileWithC2me(sampled.router());
+                if (!sampled.strategy().startsWith("PROVIDER_") || compiled == sampled.router()) {
+                    result = new Result(activeRouter, Map.of(), "PRESERVED+C2ME_DFC");
+                    BoundedNotFree.LOGGER.warn("C2ME density-function compilation hides this provider's terrain climate graph, "
+                            + "and compatible provider-sample recompilation was unavailable. Preserving the compiled provider "
+                            + "terrain without layout influence; disable C2ME's experimental useDensityFunctionCompiler option "
+                            + "to allow the uncompiled compatibility path.");
+                } else {
+                    result = new Result(compiled, sampled.replacements(), sampled.strategy() + "+C2ME_DFC");
+                }
+            } else {
+                plan.prepareProviderSamples();
+                result = providerSampled(prepared.router(), plan);
+            }
         }
+        result = applyRimTerrainStyle(result, plan);
         RandomStateAccessor accessor = (RandomStateAccessor)(Object)state;
         accessor.boundednotfree$setRouter(result.router());
         NoiseRouter router = result.router();
@@ -62,6 +67,31 @@ public final class ClimateInfluenceRouter {
                 router.erosion(), router.depth(), router.ridges(), spawnTargets));
         plan.recordClimateRouter(result.replacements(), result.strategy());
         return result;
+    }
+
+    private static Result applyRimTerrainStyle(Result base, DimensionPlan plan) {
+        if (!plan.rimCaveWallEnabled()) return base;
+        NoiseRouter original = base.router();
+        NoiseRouter styled = new NoiseRouter(
+                original.barrierNoise(),
+                original.fluidLevelFloodednessNoise(),
+                original.fluidLevelSpreadNoise(),
+                original.lavaNoise(),
+                original.temperature(),
+                original.vegetation(),
+                original.continents(),
+                original.erosion(),
+                original.depth(),
+                original.ridges(),
+                new RimCaveWallDensity(original.initialDensityWithoutJaggedness(), plan),
+                new RimCaveWallDensity(original.finalDensity(), plan),
+                original.veinToggle(),
+                original.veinRidged(),
+                original.veinGap());
+        String strategy = "NATIVE".equals(base.strategy())
+                ? "CAVE_WALL" : base.strategy() + "+CAVE_WALL";
+        BoundedNotFree.LOGGER.info("Installed provider-independent CAVE_WALL rim density profile");
+        return new Result(styled, base.replacements(), strategy);
     }
 
     private record PreparedRouter(NoiseRouter router, boolean c2meCompiled) {}
@@ -98,6 +128,14 @@ public final class ClimateInfluenceRouter {
     }
 
     private static NoiseRouter compileWithC2me(NoiseRouter router) {
+        Throwable modernFailure = null;
+        try {
+            return compileWithModernC2me(router);
+        } catch (ClassNotFoundException ignored) {
+            // C2ME releases before 0.4 use the legacy compiler below.
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+            modernFailure = exception;
+        }
         try {
             Class<?> compiler = Class.forName("com.ishland.c2me.opts.dfc.common.gen.BytecodeGen");
             Class<?> cacheType = Class.forName("it.unimi.dsi.fastutil.objects.Reference2ReferenceMap");
@@ -109,11 +147,47 @@ public final class ClimateInfluenceRouter {
                 catch (ReflectiveOperationException exception) { throw new C2meCompilationException(exception); }
             });
         } catch (ClassNotFoundException exception) {
+            if (modernFailure != null) {
+                BoundedNotFree.LOGGER.warn("C2ME density graph recompilation was unavailable; preserving its active compiled graph",
+                        modernFailure);
+            }
             return router;
         } catch (ReflectiveOperationException | C2meCompilationException | LinkageError exception) {
-            BoundedNotFree.LOGGER.warn("C2ME density graph recompilation was unavailable; using the correct uncompiled graph", exception);
+            BoundedNotFree.LOGGER.warn("C2ME density graph recompilation was unavailable; preserving its active compiled graph",
+                    modernFailure == null ? exception : modernFailure);
             return router;
         }
+    }
+
+    private static NoiseRouter compileWithModernC2me(NoiseRouter router) throws ReflectiveOperationException {
+        Class<?> compiler = Class.forName("com.ishland.c2me.opts.dfc.common.gen.jvm.BytecodeGen");
+        Object context = compiler.getMethod("initContext").invoke(null);
+        java.lang.reflect.Method compile = context.getClass().getMethod("compileDelayed", String.class,
+                DensityFunction.class);
+        String[] names = {"barrier", "fluid_level_floodedness", "fluid_level_spread", "lava", "temperature",
+                "vegetation", "continents", "erosion", "depth", "ridges", "initial_density_without_jaggedness",
+                "final_density", "vein_toggle", "vein_ridged", "vein_gap"};
+        DensityFunction[] original = routerFunctions(router);
+        DensityFunction[] compiled = new DensityFunction[original.length];
+        for (int index = 0; index < original.length; index++) {
+            compiled[index] = (DensityFunction)compile.invoke(context, names[index], original[index]);
+        }
+        compiler.getMethod("finalizeCompilation", context.getClass()).invoke(null, context);
+        return routerFrom(compiled);
+    }
+
+    private static DensityFunction[] routerFunctions(NoiseRouter router) {
+        return new DensityFunction[]{router.barrierNoise(), router.fluidLevelFloodednessNoise(),
+                router.fluidLevelSpreadNoise(), router.lavaNoise(), router.temperature(), router.vegetation(),
+                router.continents(), router.erosion(), router.depth(), router.ridges(),
+                router.initialDensityWithoutJaggedness(), router.finalDensity(), router.veinToggle(),
+                router.veinRidged(), router.veinGap()};
+    }
+
+    private static NoiseRouter routerFrom(DensityFunction[] functions) {
+        return new NoiseRouter(functions[0], functions[1], functions[2], functions[3], functions[4], functions[5],
+                functions[6], functions[7], functions[8], functions[9], functions[10], functions[11], functions[12],
+                functions[13], functions[14]);
     }
 
     private static NoiseRouter mapRouter(NoiseRouter router, java.util.function.UnaryOperator<DensityFunction> mapper) {
@@ -148,7 +222,7 @@ public final class ClimateInfluenceRouter {
         DensityFunction factor = DensityFunctions.cache2d(new InfluenceFactor(plan));
 
         DensityFunction.Visitor visitor = function -> {
-            if (function instanceof InfluenceFactor) return function;
+            if (function instanceof InfluenceFactor || function instanceof ClimateTargetFunction) return function;
             for (var entry : roots.entrySet()) {
                 for (DensityFunction root : entry.getValue()) {
                     if (function == root || function.equals(root)) {
@@ -156,8 +230,9 @@ public final class ClimateInfluenceRouter {
                         // Keep the graph visible to optimizers such as C2ME's density compiler.
                         // Only the shared 2D rim factor remains a custom leaf; all channel
                         // blending is represented by vanilla density arithmetic.
-                        DensityFunction blended = DensityFunctions.lerp(factor, function,
-                                DensityFunctions.constant(plan.climateTargetValue(entry.getKey())));
+                        DensityFunction target = DensityFunctions.cache2d(
+                                new ClimateTargetFunction(function, plan, entry.getKey()));
+                        DensityFunction blended = DensityFunctions.lerp(factor, function, target);
                         return DensityFunctions.cache2d(blended);
                     }
                 }
@@ -175,35 +250,92 @@ public final class ClimateInfluenceRouter {
 
     private static Result providerSampled(NoiseRouter original, DimensionPlan plan) {
         if (!plan.providerSampleReady()) return new Result(original, Map.of(), "UNAVAILABLE");
-        DensityFunction.Visitor visitor = function -> isProviderTerrainNoise(function)
-                ? new ProviderCoordinateSample(function, plan)
-                : function;
-        // Build independent local and provider-native branches before NoiseChunk installs interpolation and caches.
-        // Each branch consequently owns coherent interpolation state; only their finished density values are blended.
+        DensityFunction factor = DensityFunctions.cache2d(new InfluenceFactor(plan));
+        if (plan.providerTerrainRootReady()) return tectonicParameters(original, plan, factor);
+
+        DensityFunction.Visitor visitor = providerTerrainVisitor(plan);
+        DensityFunction sampledInitial = original.initialDensityWithoutJaggedness().mapAll(visitor);
+        DensityFunction sampledFinal = original.finalDensity().mapAll(visitor);
+
+        // Keep aquifers, ore veins, and other subsurface router roots local. Climate roots are sampled
+        // coherently so PREFER can still select the provider-native biome associated with the terrain.
         NoiseRouter router = new NoiseRouter(
-                providerBlend(original.barrierNoise(), plan, visitor, false),
-                providerBlend(original.fluidLevelFloodednessNoise(), plan, visitor, false),
-                providerBlend(original.fluidLevelSpreadNoise(), plan, visitor, false),
-                providerBlend(original.lavaNoise(), plan, visitor, false),
-                providerBlend(original.temperature(), plan, visitor, false),
-                providerBlend(original.vegetation(), plan, visitor, false),
-                providerBlend(original.continents(), plan, visitor, false),
-                providerBlend(original.erosion(), plan, visitor, false),
-                providerBlend(original.depth(), plan, visitor, false),
-                providerBlend(original.ridges(), plan, visitor, false),
-                providerBlend(original.initialDensityWithoutJaggedness(), plan, visitor, true),
-                providerBlend(original.finalDensity(), plan, visitor, true),
-                providerBlend(original.veinToggle(), plan, visitor, false),
-                providerBlend(original.veinRidged(), plan, visitor, false),
-                providerBlend(original.veinGap(), plan, visitor, false));
+                original.barrierNoise(),
+                original.fluidLevelFloodednessNoise(),
+                original.fluidLevelSpreadNoise(),
+                original.lavaNoise(),
+                providerBlend(original.temperature(), original.temperature().mapAll(visitor), factor),
+                providerBlend(original.vegetation(), original.vegetation().mapAll(visitor), factor),
+                providerBlend(original.continents(), original.continents().mapAll(visitor), factor),
+                providerBlend(original.erosion(), original.erosion().mapAll(visitor), factor),
+                providerBlend(original.depth(), original.depth().mapAll(visitor), factor),
+                providerBlend(original.ridges(), original.ridges().mapAll(visitor), factor),
+                providerBlend(original.initialDensityWithoutJaggedness(), sampledInitial, factor),
+                providerBlend(original.finalDensity(), sampledFinal, factor),
+                original.veinToggle(),
+                original.veinRidged(),
+                original.veinGap());
         EnumMap<ClimateChannel, Integer> replacements = new EnumMap<>(ClimateChannel.class);
         for (ClimateChannel channel : ClimateChannel.values()) replacements.put(channel, 1);
         return new Result(router, Map.copyOf(replacements), "PROVIDER_SAMPLE");
     }
 
-    private static DensityFunction providerBlend(DensityFunction local, DimensionPlan plan,
-                                                  DensityFunction.Visitor visitor, boolean terrainDensity) {
-        return new ProviderBlend(local, local.mapAll(visitor), plan, terrainDensity);
+    private static Result tectonicParameters(NoiseRouter original, DimensionPlan plan, DensityFunction factor) {
+        AtomicInteger terrainReplacements = new AtomicInteger();
+        DensityFunction.Visitor terrainVisitor = tectonicParameterVisitor(plan, factor, terrainReplacements);
+        DensityFunction influencedInitial = original.initialDensityWithoutJaggedness().mapAll(terrainVisitor);
+        DensityFunction influencedFinal = original.finalDensity().mapAll(terrainVisitor);
+        if (terrainReplacements.get() == 0) {
+            BoundedNotFree.LOGGER.warn("Tectonic's base terrain graph was present, but its continentalness, erosion, and "
+                    + "ridge parameter noises were not discoverable. Preserving provider terrain instead of blending "
+                    + "unrelated final-density fields.");
+            return new Result(original, Map.of(), "UNAVAILABLE");
+        }
+
+        // Tectonic builds terrain and caves as one nonlinear graph. Influence its three primary
+        // horizontal terrain parameters inside that graph instead of interpolating two complete
+        // final-density fields, which can introduce extra zero crossings and enormous overhangs.
+        DensityFunction.Visitor climateVisitor = tectonicParameterVisitor(plan, factor, new AtomicInteger());
+        NoiseRouter router = new NoiseRouter(
+                original.barrierNoise(),
+                original.fluidLevelFloodednessNoise(),
+                original.fluidLevelSpreadNoise(),
+                original.lavaNoise(),
+                original.temperature(),
+                original.vegetation(),
+                original.continents().mapAll(climateVisitor),
+                original.erosion().mapAll(climateVisitor),
+                original.depth().mapAll(climateVisitor),
+                original.ridges().mapAll(climateVisitor),
+                influencedInitial,
+                influencedFinal,
+                original.veinToggle(),
+                original.veinRidged(),
+                original.veinGap());
+        EnumMap<ClimateChannel, Integer> replacements = new EnumMap<>(ClimateChannel.class);
+        for (ClimateChannel channel : ClimateChannel.values()) replacements.put(channel, 1);
+        BoundedNotFree.LOGGER.info("Installed provider-native Tectonic parameter influence at {} terrain-noise leaves",
+                terrainReplacements.get());
+        return new Result(router, Map.copyOf(replacements), "PROVIDER_PARAMETERS");
+    }
+
+    private static DensityFunction.Visitor providerTerrainVisitor(DimensionPlan plan) {
+        return function -> isProviderTerrainNoise(function) ? new ProviderCoordinateSample(function, plan) : function;
+    }
+
+    private static DensityFunction.Visitor tectonicParameterVisitor(DimensionPlan plan, DensityFunction factor,
+                                                                    AtomicInteger replacements) {
+        return function -> {
+            if (!ProviderNoiseClassifier.isTectonicTerrainParameter(noiseKey(function))) return function;
+            replacements.incrementAndGet();
+            DensityFunction sampled = new ProviderCoordinateSample(function, plan);
+            return DensityFunctions.cache2d(DensityFunctions.lerp(factor, function, sampled));
+        };
+    }
+
+    private static DensityFunction providerBlend(DensityFunction local, DensityFunction sampled,
+                                                  DensityFunction factor) {
+        return DensityFunctions.lerp(factor, local, sampled);
     }
 
     private static boolean isHorizontalNoise(DensityFunction function) {
@@ -274,61 +406,32 @@ public final class ClimateInfluenceRouter {
         }
     }
 
-    private record ProviderBlend(DensityFunction local, DensityFunction sampled, DimensionPlan plan,
-                                 boolean terrainDensity) implements DensityFunction {
+    private record ClimateTargetFunction(DensityFunction original, DimensionPlan plan,
+                                         ClimateChannel channel) implements DensityFunction.SimpleFunction {
         @Override
         public double compute(FunctionContext context) {
-            double factor = plan.effectiveClimateInfluenceFactor(context.blockX(), context.blockZ());
-            if (factor <= 0) return local.compute(context);
-            double desired = sampled.compute(context);
-            double original = local.compute(context);
-            if (terrainDensity) return ProviderTerrainBlend.combine(original, desired, factor);
-            if (factor >= 1) return desired;
-            return original + (desired - original) * factor;
-        }
-
-        @Override
-        public void fillArray(double[] values, ContextProvider contexts) {
-            double[] factors = new double[values.length];
-            boolean needOriginal = false;
-            boolean needSample = false;
-            for (int index = 0; index < values.length; index++) {
-                FunctionContext context = contexts.forIndex(index);
-                double factor = plan.effectiveClimateInfluenceFactor(context.blockX(), context.blockZ());
-                factors[index] = factor;
-                needOriginal |= factor < 1;
-                needSample |= factor > 0;
-            }
-            if (needOriginal) local.fillArray(values, contexts);
-            if (!needSample) return;
-            double[] desired = new double[values.length];
-            sampled.fillArray(desired, contexts);
-            for (int index = 0; index < values.length; index++) {
-                double factor = factors[index];
-                if (terrainDensity && factor > 0) {
-                    values[index] = ProviderTerrainBlend.combine(values[index], desired[index], factor);
-                } else if (factor >= 1) values[index] = desired[index];
-                else if (factor > 0) values[index] += (desired[index] - values[index]) * factor;
-            }
+            double value = original.compute(context);
+            return plan.influencedClimateValue(channel, value, context.blockX(), context.blockZ());
         }
 
         @Override
         public DensityFunction mapAll(Visitor visitor) {
-            return visitor.apply(new ProviderBlend(local.mapAll(visitor), sampled.mapAll(visitor), plan,
-                    terrainDensity));
+            return visitor.apply(new ClimateTargetFunction(original.mapAll(visitor), plan, channel));
         }
 
-        @Override public double minValue() { return Math.min(local.minValue(), sampled.minValue()); }
-        @Override public double maxValue() { return Math.max(local.maxValue(), sampled.maxValue()); }
-        @Override public net.minecraft.util.KeyDispatchDataCodec<? extends DensityFunction> codec() { return local.codec(); }
+        @Override public double minValue() { return original.minValue(); }
+        @Override public double maxValue() { return original.maxValue(); }
+        @Override public net.minecraft.util.KeyDispatchDataCodec<? extends DensityFunction> codec() {
+            return original.codec();
+        }
     }
 
     private record ProviderCoordinateSample(DensityFunction input, DimensionPlan plan) implements DensityFunction {
         @Override
         public double compute(FunctionContext context) {
             if (context instanceof RedirectedContext) return input.compute(context);
-            return input.compute(new RedirectedContext(plan.providerSampleX(context.blockX()), context.blockY(),
-                    plan.providerSampleZ(context.blockZ()), context));
+            DimensionPlan.ProviderCoordinates sample = plan.providerCoordinates(context.blockX(), context.blockZ());
+            return input.compute(new RedirectedContext(sample.x(), context.blockY(), sample.z(), context));
         }
 
         @Override
@@ -346,6 +449,31 @@ public final class ClimateInfluenceRouter {
         @Override public net.minecraft.util.KeyDispatchDataCodec<? extends DensityFunction> codec() { return input.codec(); }
     }
 
+    private record RimCaveWallDensity(DensityFunction input, DimensionPlan plan) implements DensityFunction {
+        @Override
+        public double compute(FunctionContext context) {
+            return plan.shapeRimDensity(input.compute(context), context.blockX(), context.blockY(), context.blockZ());
+        }
+
+        @Override
+        public void fillArray(double[] values, ContextProvider contexts) {
+            input.fillArray(values, contexts);
+            for (int index = 0; index < values.length; index++) {
+                FunctionContext context = contexts.forIndex(index);
+                values[index] = plan.shapeRimDensity(values[index], context.blockX(), context.blockY(), context.blockZ());
+            }
+        }
+
+        @Override
+        public DensityFunction mapAll(Visitor visitor) {
+            return visitor.apply(new RimCaveWallDensity(input.mapAll(visitor), plan));
+        }
+
+        @Override public double minValue() { return Math.min(input.minValue(), -1); }
+        @Override public double maxValue() { return Math.max(input.maxValue(), 1); }
+        @Override public net.minecraft.util.KeyDispatchDataCodec<? extends DensityFunction> codec() { return input.codec(); }
+    }
+
     private record RedirectedContext(int blockX, int blockY, int blockZ, DensityFunction.FunctionContext original)
             implements DensityFunction.FunctionContext {
         @Override public net.minecraft.world.level.levelgen.blending.Blender getBlender() { return original.getBlender(); }
@@ -356,8 +484,8 @@ public final class ClimateInfluenceRouter {
         @Override
         public DensityFunction.FunctionContext forIndex(int arrayIndex) {
             DensityFunction.FunctionContext context = original.forIndex(arrayIndex);
-            return new RedirectedContext(plan.providerSampleX(context.blockX()), context.blockY(),
-                    plan.providerSampleZ(context.blockZ()), context);
+            DimensionPlan.ProviderCoordinates sample = plan.providerCoordinates(context.blockX(), context.blockZ());
+            return new RedirectedContext(sample.x(), context.blockY(), sample.z(), context);
         }
 
         @Override

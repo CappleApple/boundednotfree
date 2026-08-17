@@ -6,12 +6,13 @@ import net.minecraft.core.Holder;
 import net.minecraft.world.level.biome.Biome;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 final class MacroLayoutPlan {
     record Region(double x, double z, double radius, String profile, Set<Holder<Biome>> biomes, long salt) {}
-    record Result(Set<Holder<Biome>> biomes, String profile) {}
+    record Result(Set<Holder<Biome>> biomes, String profile, double influenceFactor) {}
 
     private final String mode;
     private final LayoutConfig.Dimension config;
@@ -37,30 +38,75 @@ final class MacroLayoutPlan {
 
     Result at(double x, double z) {
         return switch (mode) {
-            case "RADIAL" -> band(radialBands, distorted(boundary.normalizedDistance(x, z), x, z));
-            case "CLIMATE_BANDS" -> band(climateBands, climateCoordinate(x, z));
+            case "RADIAL" -> band(radialBands, distorted(boundary.normalizedDistance(x, z), x, z), macroExtent());
+            case "CLIMATE_BANDS" -> band(climateBands, climateCoordinate(x, z), macroExtent());
             case "VORONOI" -> nearest(x, z, false);
             case "CONTINENTS", "ARCHIPELAGO" -> nearest(x, z, true);
             default -> null;
         };
     }
 
-    private Result band(List<ResolvedBand> bands, double coordinate) {
-        for (ResolvedBand band : bands) if (coordinate >= band.min && coordinate <= band.max) return new Result(band.biomes, band.profile);
+    List<Set<Holder<Biome>>> biomePools() {
+        LinkedHashSet<Set<Holder<Biome>>> pools = new LinkedHashSet<>();
+        if (mode.equals("RADIAL")) {
+            for (ResolvedBand band : radialBands) if (!band.biomes.isEmpty()) pools.add(band.biomes);
+        } else if (mode.equals("CLIMATE_BANDS")) {
+            for (ResolvedBand band : climateBands) if (!band.biomes.isEmpty()) pools.add(band.biomes);
+        } else if (mode.equals("VORONOI") || mode.equals("CONTINENTS") || mode.equals("ARCHIPELAGO")) {
+            for (Region region : regions) if (!region.biomes.isEmpty()) pools.add(region.biomes);
+            if (!mode.equals("VORONOI") && !between.isEmpty()) pools.add(between);
+        }
+        return List.copyOf(pools);
+    }
+
+    private Result band(List<ResolvedBand> bands, double coordinate, double extent) {
+        for (ResolvedBand band : bands) if (coordinate >= band.min && coordinate <= band.max) {
+            double edgeDistance = Math.min(coordinate - band.min, band.max - coordinate) * extent;
+            return new Result(band.biomes, band.profile, transitionFactor(edgeDistance));
+        }
         return null;
     }
 
     private Result nearest(double x, double z, boolean requireInside) {
         Region nearest = null;
         double best = Double.POSITIVE_INFINITY;
+        double nearestOutsideEdge = Double.POSITIVE_INFINITY;
+        double selectedInsideEdge = Double.POSITIVE_INFINITY;
         for (Region region : regions) {
             double distance = Math.hypot(x - region.x, z - region.z);
             double warpedRadius = region.radius * (1.0 + 0.18 * noise(x * 0.0015, z * 0.0015, region.salt));
-            if (requireInside && distance > warpedRadius) continue;
+            if (requireInside && distance > warpedRadius) {
+                nearestOutsideEdge = Math.min(nearestOutsideEdge, distance - warpedRadius);
+                continue;
+            }
             double score = requireInside ? distance / warpedRadius : distance;
-            if (score < best) { best = score; nearest = region; }
+            if (score < best) {
+                best = score;
+                nearest = region;
+                selectedInsideEdge = requireInside ? warpedRadius - distance : Double.POSITIVE_INFINITY;
+            }
         }
-        return nearest == null ? (between.isEmpty() ? null : new Result(between, null)) : new Result(nearest.biomes, nearest.profile);
+        if (nearest == null) {
+            return between.isEmpty() ? null : new Result(between, null, transitionFactor(nearestOutsideEdge));
+        }
+        return new Result(nearest.biomes, nearest.profile,
+                requireInside ? transitionFactor(selectedInsideEdge) : 1);
+    }
+
+    private double macroExtent() {
+        return Math.max(1, Math.max(config.extentX > 0 ? config.extentX : config.radius,
+                config.extentZ > 0 ? config.extentZ : config.radius));
+    }
+
+    private double transitionFactor(double distanceToTransition) {
+        return smoothTransitionFactor(distanceToTransition, config.macroTransitionWidth);
+    }
+
+    static double smoothTransitionFactor(double distanceToTransition, double width) {
+        if (width <= 0 || distanceToTransition >= width) return 1;
+        if (distanceToTransition <= 0 || !Double.isFinite(distanceToTransition)) return 0;
+        double linear = distanceToTransition / width;
+        return linear * linear * (3 - 2 * linear);
     }
 
     private double climateCoordinate(double x, double z) {

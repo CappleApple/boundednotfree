@@ -6,6 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProviderNoiseClassifierTest {
+    @Test void identifiesOnlyTectonicsPrimaryTerrainParameters() {
+        assertTrue(ProviderNoiseClassifier.isTectonicTerrainParameter("tectonic:parameter/continentalness"));
+        assertTrue(ProviderNoiseClassifier.isTectonicTerrainParameter("TECTONIC:PARAMETER/EROSION"));
+        assertTrue(ProviderNoiseClassifier.isTectonicTerrainParameter("tectonic:parameter/ridge"));
+        assertFalse(ProviderNoiseClassifier.isTectonicTerrainParameter("tectonic:mountain_ridges/base"));
+        assertFalse(ProviderNoiseClassifier.isTectonicTerrainParameter("minecraft:cave_layer"));
+        assertFalse(ProviderNoiseClassifier.isTectonicTerrainParameter(null));
+    }
+
     @Test void leavesSurfaceTerrainNoisesEligibleForProviderSampling() {
         assertFalse(ProviderNoiseClassifier.isSubsurface("tectonic:mountain_ridges/base"));
         assertFalse(ProviderNoiseClassifier.isSubsurface("tectonic:noise/full_continents"));

@@ -1,10 +1,14 @@
 package com.cappleapple.boundednotfree.mixin;
 
 import com.cappleapple.boundednotfree.runtime.LayoutRuntime;
+import com.cappleapple.boundednotfree.runtime.TerrainHandler;
 import net.minecraft.core.Holder;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.StructureManager;
+import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.BiomeResolver;
+import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
@@ -12,6 +16,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(ChunkGenerator.class)
@@ -21,6 +26,17 @@ abstract class ChunkGeneratorMixin {
     private BiomeResolver boundednotfree$constrainBiomeSource(BiomeResolver original) {
         ChunkGenerator generator = (ChunkGenerator)(Object)this;
         return LayoutRuntime.constrainedResolver(generator, original);
+    }
+
+    /**
+     * Make the final block-level boundary pass after every structure and placed feature has run, but while
+     * the target is still a ProtoChunk. Running this from the later LevelChunk promotion constructor lets
+     * live-world block-change integrations synchronously request neighboring chunks from a C2ME worker.
+     */
+    @Inject(method = "applyBiomeDecoration", at = @At("RETURN"))
+    private void boundednotfree$finalizeDecoratedTerrain(WorldGenLevel level, ChunkAccess chunk,
+                                                          StructureManager structures, CallbackInfo ci) {
+        TerrainHandler.finalizeNewChunk((ChunkGenerator)(Object)this, chunk);
     }
 
     @Inject(method = "tryGenerateStructure", at = @At("HEAD"), cancellable = true)

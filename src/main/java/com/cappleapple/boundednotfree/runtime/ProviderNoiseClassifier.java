@@ -1,10 +1,20 @@
 package com.cappleapple.boundednotfree.runtime;
 
 import java.util.Locale;
+import java.util.Set;
 
 /** Keeps provider-coordinate terrain influence out of independently local subsurface systems. */
 final class ProviderNoiseClassifier {
+    private static final Set<String> TECTONIC_TERRAIN_PARAMETERS = Set.of(
+            "tectonic:parameter/continentalness",
+            "tectonic:parameter/erosion",
+            "tectonic:parameter/ridge");
+
     private ProviderNoiseClassifier() {}
+
+    static boolean isTectonicTerrainParameter(String id) {
+        return id != null && TECTONIC_TERRAIN_PARAMETERS.contains(id.toLowerCase(Locale.ROOT));
+    }
 
     static boolean isSubsurface(String id) {
         String path = id.toLowerCase(Locale.ROOT);

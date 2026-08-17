@@ -1,6 +1,6 @@
 # Complete configuration reference
 
-This document describes every world-layout field implemented by Bounded Not Free 1.0. The authoritative file is `config/boundednotfree/world-layout.json`.
+This document describes every world-layout field implemented by Bounded Not Free 1.3. The authoritative file is `config/boundednotfree/world-layout.json`.
 
 The file is ordinary JSON: comments and trailing commas are invalid. String options are case-insensitive, but the uppercase values shown here are recommended. Unknown fields are ignored, so a misspelled field silently retains its default. Changes affect newly generated chunks and do not rebuild existing terrain.
 
@@ -29,7 +29,18 @@ The file is ordinary JSON: comments and trailing commas are invalid. String opti
       "rimSelectors": ["group:mountains"],
       "rimInfluenceStrength": 1.0,
       "rimBlendWidth": 128,
+      "rimTerrainStyle": "NATIVE",
+      "rimCaveWallWidth": 96,
+      "rimCaveWallFloorY": -48,
+      "rimCaveWallTopY": 192,
+      "rimCaveWallSurfaceNoiseScale": 48,
+      "rimCaveWallSurfaceNoiseStrength": 12,
+      "rimCaveWallCaveScale": 32,
+      "rimCaveWallCaveThreshold": 0.62,
       "outsideMode": "VOID",
+      "voidEdgeDitherWidth": 0,
+      "voidBlockDissolveWidth": 0,
+      "voidBlockDissolveNoiseScale": 8,
       "gameplayBorder": "BARRIER",
       "biomeFilterMode": "BLACKLIST",
       "biomeFilter": [],
@@ -140,10 +151,39 @@ The rim is the inside region whose edge distance is at most `rimWidth`.
 | `rimSelectors` | string array | `[]` | Biomes whose finalized multi-noise points can supply rim terrain; also the forced pool for `REQUIRE`. |
 | `rimInfluenceStrength` | number | `1.0` | Range `0.0` through `1.0`; zero disables density influence and one reaches the selected target in the fully influenced section. |
 | `rimBlendWidth` | number | `128` | Inward blend distance, clamped to `rimWidth`. `0` fully influences the entire rim. |
+| `rimTerrainStyle` | string | `NATIVE` | `NATIVE` retains the provider's normal density shape. `CAVE_WALL` adds the explicit exposed cave-wall profile below. |
+| `rimCaveWallWidth` | number | `96` | Inward distance occupied by the cave wall. Must be positive. Its inner portion fades back into native terrain. |
+| `rimCaveWallFloorY` | number | `-48` | Lowest elevation of the cave-wall formation before surface noise. Native density is retained below it. |
+| `rimCaveWallTopY` | number | `192` | Highest elevation of the cave-wall formation before surface noise; must be above `rimCaveWallFloorY`. |
+| `rimCaveWallSurfaceNoiseScale` | number | `48` | Horizontal coherence scale for variation along the top and base of the wall; must be at least `1`. |
+| `rimCaveWallSurfaceNoiseStrength` | number | `12` | Maximum broad variation at the top, with smaller related variation at the base. `0` keeps both elevations uniform. |
+| `rimCaveWallCaveScale` | number | `32` | Three-dimensional coherence scale for cave pockets and tunnels. Larger values produce broader formations. |
+| `rimCaveWallCaveThreshold` | number | `0.62` | Range `0.0` through `1.0`. Lower values excavate more of the wall; `1.0` disables cave carving while retaining the rock wall. |
 
-The provider supplies the terrain-bearing climate point. Continentalness, erosion, and weirdness are influenced; temperature and humidity remain local so associated vanilla/modded variants remain possible. Density-decoupled providers such as Tectonic are sampled at native block scale while caves and other subsurface noise stay local. This affects only new chunks and requires compatible noise generation.
+The provider supplies the terrain-bearing climate point. Continentalness, erosion, and weirdness are influenced; temperature and humidity remain local so associated vanilla/modded variants remain possible. Tectonic uses ranked native patches to redirect its own continentalness, erosion, and ridge parameter noises inside one native terrain-and-cave density graph. Other density-decoupled providers use a conservative terrain-noise sampling fallback. This affects only new chunks and requires compatible noise generation.
 
-C2ME's normal/default configuration supports full provider-native Tectonic rim terrain. If C2ME's optional experimental `useDensityFunctionCompiler` option is manually enabled and makes a provider's terrain graph opaque, the mod preserves that terrain and applies biome-only rim influence. Leave that C2ME option at its default to retain terrain shaping.
+C2ME's normal configuration and optional density-function compiler support provider-native Tectonic terrain. Version 1.2 recognizes both C2ME's legacy compiler API and the shared `gen.jvm` context introduced by C2ME 0.4. If a future compiler API cannot safely recompile the selected influence strategy, Bounded Not Free preserves the provider terrain and reports incomplete influence.
+
+### Cave wall
+
+`CAVE_WALL` is an explicit density profile and works with vanilla terrain, Tectonic, or another compatible `NoiseBasedChunkGenerator`. It does not interpolate two provider final-density fields. Instead, it composes with the already-selected terrain strategy, constructs a tall rock band at the rim, and carves seeded three-dimensional cave pockets and narrower tunnels through that band. Openings can intersect the void-facing surface, making the boundary look like an exposed cave cross-section rather than one enormous hollow chamber.
+
+```json
+{
+  "rimEnabled": true,
+  "rimTerrainStyle": "CAVE_WALL",
+  "rimCaveWallWidth": 96,
+  "rimCaveWallFloorY": -48,
+  "rimCaveWallTopY": 192,
+  "rimCaveWallSurfaceNoiseScale": 48,
+  "rimCaveWallSurfaceNoiseStrength": 12,
+  "rimCaveWallCaveScale": 32,
+  "rimCaveWallCaveThreshold": 0.62,
+  "outsideMode": "VOID"
+}
+```
+
+`VOID` is recommended so the cave-bearing rock is exposed as the world-edge face. Other outside modes leave provider terrain beyond it. Column dither and block dissolve are separate later boundary effects and can erode or dissolve the outer face when enabled. The cave-wall style affects newly generated chunks only.
 
 ## Outside parameters
 
@@ -151,16 +191,19 @@ C2ME's normal/default configuration supports full provider-native Tectonic rim t
 | --- | --- | --- | --- |
 | `outsideMode` | string | `NORMAL` | Selects the behavior below. |
 | `outsideSelectors` | string array | `[]` | Biome pool for `CUSTOM`; when nonempty, it is also preferred by other non-`NORMAL` modes. |
+| `voidEdgeDitherWidth` | number | `0` | For `VOID`, the maximum number of blocks the edge may erode inward. `0` keeps the exact boundary. Positive values create deterministic, coherent breakup inside that band; they never extend terrain outside the configured shape. |
+| `voidBlockDissolveWidth` | number | `0` | For `VOID`, the inward width of a separate three-dimensional block-noise gradient. `0` disables it. Positive values retain all blocks at the inner edge and progressively remove individual blocks and clusters toward the boundary. |
+| `voidBlockDissolveNoiseScale` | number | `8` | Approximate coherence scale for block dissolution. Must be at least `1`; larger values make broader clusters and smaller values make finer breakup. |
 
 | `outsideMode` | Biome outside | Blocks outside |
 | --- | --- | --- |
 | `NORMAL` | Original provider biome. | Original terrain. |
-| `VOID` | `outsideSelectors`, otherwise `minecraft:the_void`. | Every non-air block in outside columns is removed during generation. |
+| `VOID` | `outsideSelectors`, otherwise `minecraft:the_void`. | Every non-air block in outside columns and configured dissolve holes is removed after terrain noise and rechecked when a newly generated chunk becomes live; conventional later structure/feature writes into those positions are rejected. |
 | `OCEAN` | `outsideSelectors`, otherwise `#minecraft:is_ocean`. | Original terrain; no forced basin or water fill. |
 | `LAVA_OCEAN` | `outsideSelectors`, otherwise `minecraft:nether_wastes`. | Original terrain; no forced lava fill. |
 | `CUSTOM` | Deterministic match from `outsideSelectors`; empty uses fallback handling. | Original terrain. |
 
-Only `VOID` changes blocks. Other modes constrain biome selection without reshaping or filling terrain.
+Only `VOID` changes blocks. Other modes constrain biome selection without reshaping or filling terrain. `voidEdgeDitherWidth` removes whole columns, while `voidBlockDissolveWidth` removes individual blocks and coherent clusters. Both affect newly generated chunks only and are derived from the saved layout seed, so the same world and configuration reproduce the same edge. A `BARRIER` column still wins over either erosion mode when they are enabled together.
 
 ## `gameplayBorder`
 
@@ -171,7 +214,7 @@ Only `VOID` changes blocks. Other modes constrain biome selection without reshap
 | `CUSTOM_SHAPE` | Every five ticks, moves outside players to one block inside the exact shape at the same Y. It has no vanilla border fog/warning/damage and does not constrain non-player entities. |
 | `BARRIER` | During new chunk generation, fills the one-block-thick inside perimeter with `minecraft:barrier` from the dimension's minimum build height through its top buildable block. It follows every supported boundary shape and physically blocks players and other colliding entities. |
 
-`BARRIER` is independent of `rimEnabled`; the rim controls biomes/terrain while the barrier follows the outer boundary. Barrier blocks are invisible unless a player holds a barrier item. Existing chunks are not retrofitted. With `outsideMode: "VOID"`, the wall remains on the inside edge and the next outside column is cleared.
+`BARRIER` is independent of `rimEnabled`; the rim controls biomes/terrain while the barrier follows the outer boundary. Barrier blocks are invisible unless a player holds a barrier item. Later worldgen decoration cannot replace the generated wall. Existing chunks are not retrofitted. With `outsideMode: "VOID"`, the wall remains on the inside edge and the next outside column is cleared.
 
 ## Biome filtering
 
@@ -253,8 +296,12 @@ Reservations identify eligible standard placement candidates but do not bypass M
 | `RADIAL` | Uses `radialBands` against normalized center distance. |
 | `CLIMATE_BANDS` | Uses `climateBands` on a geographic axis; this is not the underlying temperature/humidity sampler. |
 | `VORONOI` | Assigns every point to the nearest of `regionCount` centers. |
-| `CONTINENTS` | Uses `continentCount` bounded, noise-warped circular regions plus between-region biomes. |
+| `CONTINENTS` | Uses `continentCount` bounded, noise-warped circular regions plus between-region biomes. Within each region, accepted provider biomes are retained and restricted candidates follow the nearest active multi-noise climate parameters rather than per-cell hashing. Terrain-bearing parameters follow the same selected candidate. |
 | `ARCHIPELAGO` | Same current region algorithm using `islandCount`; it does not create floating islands. |
+
+Every constrained macro layout (`RADIAL`, `CLIMATE_BANDS`, `VORONOI`, `CONTINENTS`, and `ARCHIPELAGO`) influences terrain and biome selection together. Vanilla-compatible density graphs receive the selected biome's continentalness, erosion, and weirdness ranges. Density-decoupled providers use a ranked native terrain patch for that selected biome. This is why an ocean-only continent generates basin/ocean terrain rather than merely assigning an ocean label to pre-existing hills.
+
+Within `macroTransitionWidth` of a macro boundary, density fades from provider-native terrain to the constrained pool. Provider biomes remain authoritative during the fade, and premature ocean labels on its low-influence land side are replaced by the nearest provider-native land biome. This produces a normal coast rather than labeling the last interpolated land cells as ocean.
 
 | Parameter | Type | Default | Behavior |
 | --- | --- | --- | --- |
@@ -269,9 +316,12 @@ Reservations identify eligible standard placement candidates but do not bypass M
 | `maxRegionRadius` | number | `1400` | Maximum radius; values below the minimum effectively use the minimum. |
 | `minRegionSpacing` | number | `256` | Minimum center spacing. |
 | `transitionNoiseStrength` | number | `64` | Deterministic band-edge distortion for `RADIAL` and `CLIMATE_BANDS`. Region edges use a fixed warp. |
+| `macroTransitionWidth` | number | `32` | Terrain transition width in blocks at macro-layout boundaries. `0` restores a hard transition. |
 | `betweenRegionsMode` | string | `BIOME` | `BIOME` uses `betweenRegionSelectors`; `VOID` selects `minecraft:the_void` as a biome but does not remove blocks. |
 | `betweenRegionSelectors` | string array | `[#minecraft:is_ocean]` | Filler biome pool between continent/archipelago regions. |
 | `profileSequence` | string array | `[]` | Cycles profile names across generated centers. Empty or unknown names produce empty region pools. |
+
+For `CONTINENTS` and `ARCHIPELAGO`, an empty `profileSequence` intentionally leaves the generated regions on provider-native biomes and terrain; only the between-region pool is constrained. Define entries in `continentProfiles` and name them in `profileSequence` when each generated region should have an explicit biome pool.
 
 Band fields:
 
@@ -365,6 +415,9 @@ This disabled reference specimen shows every implemented field and JSON type. On
       "rimInfluenceStrength": 1.0,
       "rimBlendWidth": 128,
       "outsideMode": "NORMAL",
+      "voidEdgeDitherWidth": 0,
+      "voidBlockDissolveWidth": 0,
+      "voidBlockDissolveNoiseScale": 8,
       "outsideSelectors": [],
       "gameplayBorder": "NONE",
       "biomeFilterMode": "BLACKLIST",
@@ -465,6 +518,7 @@ This disabled reference specimen shows every implemented field and JSON type. On
       "maxRegionRadius": 1400,
       "minRegionSpacing": 256,
       "transitionNoiseStrength": 64,
+      "macroTransitionWidth": 32,
       "betweenRegionsMode": "BIOME",
       "betweenRegionSelectors": ["#minecraft:is_ocean"],
       "profileSequence": ["temperate"],

@@ -1,5 +1,75 @@
 # Changelog
 
+## 1.3 - 2026-08-17
+
+### Added
+
+- Added the opt-in provider-independent `CAVE_WALL` rim terrain style. It constructs a tall rock cross-section, carves deterministic three-dimensional cave pockets and tunnels through the exposed face, and fades the formation back into native terrain.
+
+## 1.2.1 - 2026-08-16
+
+### Fixed
+
+- Fixed world creation deadlocking when Sable observes the final boundary cleanup during C2ME live-chunk promotion; final cleanup now runs after biome decoration while the target is still a generation chunk.
+- Removed the post-noise undercut fill that extruded surface fragments and trees into stone pillars; provider transitions now retain the terrain shaped by the blended density graph.
+- Fixed Tectonic rim and macro transitions creating enormous hollow cliffs by interpolating unrelated local and remote final-density fields. Tectonic influence now redirects only its native continentalness, erosion, and ridge parameter noises inside one terrain-and-cave graph, while mountain anchors continue to prefer normal relief over floating high ceilings.
+
+## 1.2 - 2026-08-16
+
+### Added
+
+- Added `voidBlockDissolveWidth` and `voidBlockDissolveNoiseScale` for a deterministic three-dimensional noise gradient that dissolves individual blocks toward a `VOID` edge while retaining the existing column dither.
+- Added `macroTransitionWidth` so constrained macro terrain fades through a provider-native coast instead of changing biome labels at a hard density boundary.
+
+### Changed
+
+- Recompiled provider-sampled terrain through both the legacy C2ME compiler API and C2ME 0.4's shared `gen.jvm` compilation context.
+- Shortlisted provider terrain anchors before full patch scoring, avoiding repeated expensive Tectonic density scans for common ocean candidates.
+- Expressed provider terrain blending as optimizer-visible vanilla density arithmetic so C2ME can compile the Tectonic graph instead of delegating the entire blend.
+
+### Fixed
+
+- Fixed Tectonic terrain remaining completely uninfluenced with C2ME 0.4.0 alpha 120 even though rim and continent biomes were reassigned.
+- Fixed the inner rim biome boundary lagging behind interpolated rim terrain by one quart cell, which could leave an ocean label on the first mountain columns.
+- Fixed a narrow strip of provider land being labeled as an ocean biome at `CONTINENTS` and `ARCHIPELAGO` region transitions.
+- Prevented structures and features from refilling block-level dissolve holes before a newly generated chunk becomes live.
+
+## 1.1 - 2026-08-16
+
+### Added
+
+- Added `voidEdgeDitherWidth`, a deterministic maximum inward erosion distance for `outsideMode: "VOID"`; `0` preserves the exact boundary and positive values break the edge into an irregular falloff without ever generating terrain beyond the configured shape.
+
+### Changed
+
+- Changed constrained macro layouts and required-biome reservations to influence the terrain-bearing climate graph as well as biome selection, so ocean profiles produce ocean terrain instead of relabeling existing hills.
+- Changed density-decoupled provider sampling to rank verified terrain patches for each selected biome and reject ceiling-clipped mountain samples.
+
+### Fixed
+
+- Fixed `CONTINENTS`, `ARCHIPELAGO`, `VORONOI`, radial-band, and climate-band biome assignments disagreeing with the generated terrain.
+- Fixed Tectonic rim selectors producing the requested mountain biome over unrelated local lowland terrain.
+- Fixed full-strength Tectonic rim sampling retaining local density instead of replacing it with the verified provider-native mountain density.
+
+## 1.0.3 - 2026-08-16
+
+### Changed
+
+- Changed constrained macro-layout biome selection to retain an accepted provider biome or choose the profile candidate nearest the provider's sampled multi-noise climate point.
+
+### Fixed
+
+- Kept active dimension plans registered through transient level-unload notifications emitted by threaded chunk lifecycles.
+- Enforced `outsideMode: "VOID"` and generated barrier columns again when each new `ProtoChunk` becomes a live `LevelChunk`, covering C2ME paths that bypass NeoForge's new-chunk load event and removing deferred Supplementaries generator blocks before they can tick.
+- Replaced per-quart coordinate hashing in `CONTINENTS`, `ARCHIPELAGO`, `VORONOI`, band, required-biome, rim-`REQUIRE`, and outside pools, eliminating patchwork biome placement inside a region.
+
+## 1.0.2 - 2026-08-16
+
+### Fixed
+
+- Prevented structures and placed features, including Supplementaries worldgen, from restoring non-air blocks outside an `outsideMode: "VOID"` boundary after the initial terrain pass.
+- Prevented later worldgen decoration from replacing generated `gameplayBorder: "BARRIER"` blocks.
+
 ## 1.0.1 - 2026-08-14
 
 ### Added

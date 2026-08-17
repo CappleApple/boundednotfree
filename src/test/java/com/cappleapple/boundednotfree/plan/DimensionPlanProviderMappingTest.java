@@ -6,19 +6,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class DimensionPlanProviderMappingTest {
     @Test void foldsAtNativeBlockScaleInsideVerifiedPatch() {
-        assertEquals(0, DimensionPlan.foldProviderOffset(0));
-        assertEquals(1, DimensionPlan.foldProviderOffset(1));
-        assertEquals(96, DimensionPlan.foldProviderOffset(96));
-        assertEquals(95, DimensionPlan.foldProviderOffset(97));
-        assertEquals(0, DimensionPlan.foldProviderOffset(192));
-        assertEquals(-96, DimensionPlan.foldProviderOffset(288));
-        assertEquals(0, DimensionPlan.foldProviderOffset(384));
+        assertEquals(0, ProviderCoordinateFold.fold(0, 96));
+        assertEquals(1, ProviderCoordinateFold.fold(1, 96));
+        assertEquals(96, ProviderCoordinateFold.fold(96, 96));
+        assertEquals(95, ProviderCoordinateFold.fold(97, 96));
+        assertEquals(0, ProviderCoordinateFold.fold(192, 96));
+        assertEquals(-96, ProviderCoordinateFold.fold(288, 96));
+        assertEquals(0, ProviderCoordinateFold.fold(384, 96));
     }
 
     @Test void remainsContinuousAcrossPositiveAndNegativeFolds() {
         for (long coordinate = -1_000; coordinate < 1_000; coordinate++) {
-            int current = DimensionPlan.foldProviderOffset(coordinate);
-            int next = DimensionPlan.foldProviderOffset(coordinate + 1);
+            int current = ProviderCoordinateFold.fold(coordinate, 96);
+            int next = ProviderCoordinateFold.fold(coordinate + 1, 96);
             assertEquals(1, Math.abs(next - current));
         }
     }

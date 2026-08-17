@@ -38,8 +38,19 @@ public final class LayoutConfig {
         public List<String> rimSelectors = new ArrayList<>();
         public double rimInfluenceStrength = 1.0;
         public double rimBlendWidth = 128;
+        public String rimTerrainStyle = "NATIVE";
+        public double rimCaveWallWidth = 96;
+        public double rimCaveWallFloorY = -48;
+        public double rimCaveWallTopY = 192;
+        public double rimCaveWallSurfaceNoiseScale = 48;
+        public double rimCaveWallSurfaceNoiseStrength = 12;
+        public double rimCaveWallCaveScale = 32;
+        public double rimCaveWallCaveThreshold = 0.62;
         public String outsideMode = "NORMAL";
         public List<String> outsideSelectors = new ArrayList<>();
+        public double voidEdgeDitherWidth;
+        public double voidBlockDissolveWidth;
+        public double voidBlockDissolveNoiseScale = 8;
         public String gameplayBorder = "NONE";
         public String biomeFilterMode = "BLACKLIST";
         public List<String> biomeFilter = new ArrayList<>();
@@ -63,6 +74,7 @@ public final class LayoutConfig {
         public double maxRegionRadius = 1400;
         public double minRegionSpacing = 256;
         public double transitionNoiseStrength = 64;
+        public double macroTransitionWidth = 32;
         public String betweenRegionsMode = "BIOME";
         public List<String> betweenRegionSelectors = new ArrayList<>(List.of("#minecraft:is_ocean"));
         public List<String> profileSequence = new ArrayList<>();

@@ -62,14 +62,16 @@ public final class LayoutRuntime {
         DimensionPlan plan = new DimensionPlan(id, root, config, BoundaryFactory.create(config, seed), seed,
                 level.registryAccess().registryOrThrow(Registries.BIOME), level.registryAccess().registryOrThrow(Registries.STRUCTURE));
         plan.installClimateTargets(level.getChunkSource().getGenerator().getBiomeSource(),
-                level.getChunkSource().randomState().sampler(), level.getSeaLevel(), level.getMaxBuildHeight());
-        if (plan.climateInfluenceReady() && level.getChunkSource().getGenerator() instanceof NoiseBasedChunkGenerator noiseGenerator) {
+                level.getChunkSource().randomState().sampler(), level.getChunkSource().randomState().router(),
+                level.registryAccess().registryOrThrow(Registries.DENSITY_FUNCTION),
+                level.getSeaLevel(), level.getMinBuildHeight(), level.getMaxBuildHeight());
+        if (plan.noiseRouterInfluenceReady() && level.getChunkSource().getGenerator() instanceof NoiseBasedChunkGenerator noiseGenerator) {
             var result = ClimateInfluenceRouter.install(level.getChunkSource().randomState(), plan, noiseGenerator.generatorSettings().value().spawnTarget());
-            BoundedNotFree.LOGGER.info("Installed rim climate influence for {} using {} parameter point(s) from {}, target {}, strategy {}, provider sample {}, router replacements {}",
-                    id, plan.rimClimatePointCount(), plan.climateParameterSource(), plan.climateTargetDescription(), result.strategy(),
-                    plan.providerSampleDescription(), result.replacements());
-        } else if (plan.climateInfluenceReady()) {
-            plan.addValidation("Rim climate influence requires a NoiseBasedChunkGenerator, but the active generator is "
+            BoundedNotFree.LOGGER.info("Installed layout terrain influence for {} using {} rim parameter point(s) from {}, rim target {}, rim style {}, strategy {}, provider samples {}, router replacements {}",
+                    id, plan.rimClimatePointCount(), plan.climateParameterSource(), plan.climateTargetDescription(),
+                    plan.config().rimTerrainStyle, result.strategy(), plan.providerSampleDescription(), result.replacements());
+        } else if (plan.noiseRouterInfluenceReady()) {
+            plan.addValidation("Layout terrain influence requires a NoiseBasedChunkGenerator, but the active generator is "
                     + level.getChunkSource().getGenerator().getClass().getName());
         }
         plan.installStructureReservations(StructurePlanner.plan(level, plan));
@@ -85,14 +87,8 @@ public final class LayoutRuntime {
                 plan.biomeReservations().size(), plan.structureReservations().size());
     }
 
-    @SubscribeEvent
-    public static void levelUnload(LevelEvent.Unload event) {
-        if (event.getLevel() instanceof ServerLevel level) {
-            ChunkGenerator generator = level.getChunkSource().getGenerator();
-            PLANS.remove(generator); STRUCTURE_COUNTS.remove(generator);
-        }
-    }
-
+    // Keep plans until the server ends. Threaded chunk lifecycles can emit transient level-unload
+    // notifications while the owning ServerLevel and generator remain active.
     @SubscribeEvent
     public static void serverStopped(ServerStoppedEvent event) { PLANS.clear(); STRUCTURE_COUNTS.clear(); loaded = null; }
 
@@ -110,7 +106,8 @@ public final class LayoutRuntime {
     public static DimensionPlan plan(ChunkGenerator generator) { return PLANS.get(generator); }
     public static net.minecraft.world.level.biome.BiomeResolver constrainedResolver(ChunkGenerator generator, net.minecraft.world.level.biome.BiomeResolver original) {
         DimensionPlan plan = PLANS.get(generator);
-        return plan == null ? original : (x, y, z, sampler) -> plan.selectBiome(original.getNoiseBiome(x, y, z, sampler), x, z);
+        return plan == null ? original : (x, y, z, sampler) ->
+                plan.selectBiome(original.getNoiseBiome(x, y, z, sampler), x, y, z, sampler);
     }
     public static boolean structureAllowed(ChunkGenerator generator, net.minecraft.core.Holder<net.minecraft.world.level.levelgen.structure.Structure> structure, int chunkX, int chunkZ) {
         DimensionPlan plan = PLANS.get(generator);
@@ -133,7 +130,8 @@ public final class LayoutRuntime {
         source.sendSuccess(() -> Component.literal("Boundary=" + plan.boundary().type() + " center=" + plan.config().centerX + "," + plan.config().centerZ
                 + " normalized=" + format(metric.normalizedFromCenter()) + " edge=" + format(metric.blocksToEdge()) + " zone=" + (zone == null ? "none" : zone)
                 + " influence=" + format(plan.effectiveClimateInfluenceFactor(source.getPosition().x, source.getPosition().z))
-                + " target=" + plan.climateTargetDescription() + " seed=" + plan.seed()), false);
+                + " target=" + plan.climateTargetDescription() + " rimStyle=" + plan.config().rimTerrainStyle
+                + " seed=" + plan.seed()), false);
     }
 
     public static void sendValidation(CommandSourceStack source) {
@@ -175,6 +173,14 @@ public final class LayoutRuntime {
             report.put("configSha256", loaded == null ? "unavailable" : loaded.hash());
             report.put("rimPlacementMode", plan.config().rimPlacementMode);
             report.put("rimInfluenceStrength", plan.config().rimInfluenceStrength);
+            report.put("rimTerrainStyle", plan.config().rimTerrainStyle);
+            report.put("rimCaveWallWidth", plan.config().rimCaveWallWidth);
+            report.put("rimCaveWallFloorY", plan.config().rimCaveWallFloorY);
+            report.put("rimCaveWallTopY", plan.config().rimCaveWallTopY);
+            report.put("rimCaveWallSurfaceNoiseScale", plan.config().rimCaveWallSurfaceNoiseScale);
+            report.put("rimCaveWallSurfaceNoiseStrength", plan.config().rimCaveWallSurfaceNoiseStrength);
+            report.put("rimCaveWallCaveScale", plan.config().rimCaveWallCaveScale);
+            report.put("rimCaveWallCaveThreshold", plan.config().rimCaveWallCaveThreshold);
             report.put("rimClimateTarget", plan.climateTargetDescription());
             report.put("rimInfluenceStrategy", plan.climateInfluenceStrategy());
             report.put("climateParameterSource", plan.climateParameterSource());
