@@ -7,7 +7,7 @@ It is intended for procedural modpack worlds that need a reproducible geography 
 ## Install
 
 1. Install NeoForge 21.1.244 or newer for Minecraft 1.21.1.
-2. Put `boundednotfree-1.3.jar` in the server's and clients' `mods` directories.
+2. Put `boundednotfree-1.3.4.jar` in the server's and clients' `mods` directories.
 3. Start once to create `config/boundednotfree/world-layout.json`.
 4. Stop the server, edit that file, set the desired dimensions to `"enabled": true`, then create a new world.
 
@@ -25,6 +25,8 @@ The generated default is disabled and conservative. Existing chunks are never re
 - Provider-native rim terrain influence with smooth falloff and `PREFER` or `REQUIRE` biome placement.
 - Optional provider-independent `CAVE_WALL` rims that expose a tall rock cross-section with coherent cave pockets and tunnels opening onto the void.
 - Optional full-height, one-block-thick barrier-block walls that follow the exact configured boundary shape.
+- Boundary-aware `/locate structure`, `/locate biome`, and `/locate poi` searches that stop at the active dimension's configured edge.
+- Destination-boundary clamping for Overworld-to-Nether and Nether-to-Overworld portals and cross-dimension teleports.
 - Deterministic saved layout seed/hash, optional per-world plan locking, SVG/JSON preview export, and a read-only Java API.
 
 ## Commands

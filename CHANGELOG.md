@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.4 - 2026-09-03
+
+### Fixed
+
+- Prevented Lithium's fast-portal optimization from crashing world startup by filtering its completed portal lookup result instead of injecting into the replaced lookup method.
+
+## 1.3.3 - 2026-09-03
+
+### Fixed
+
+- Prevented a startup crash with Sable by preserving its Nether portal world-border hook while applying destination-edge clamping after the scaled portal position is computed.
+
+## 1.3.2 - 2026-09-03
+
+### Fixed
+
+- Stopped `/locate structure`, `/locate biome`, and `/locate poi` searches when their next candidate or search ring reaches the configured edge of the active dimension.
+- Clamped Overworld-to-Nether and Nether-to-Overworld portal destinations and cross-dimension teleports to the configured edge of the destination dimension, while keeping portal lookup and frame creation inside that boundary.
+
 ## 1.3.1 - 2026-08-17
 
 ### Fixed
