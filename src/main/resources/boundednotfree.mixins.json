@@ -4,5 +4,6 @@
   "package": "com.cappleapple.boundednotfree.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": ["ChunkGeneratorMixin", "EntityMixin", "LocateCommandMixin", "NetherPortalBlockMixin", "NoiseBasedChunkGeneratorMixin", "PortalForcerMixin", "ServerPlayerMixin", "WorldGenRegionMixin", "MultiNoiseBiomeSourceAccessor", "RandomStateAccessor"],
+  "client": ["compat.GenesisScreenMixin", "compat.GenesisBiomePreviewThreadMixin"],
   "injectors": { "defaultRequire": 1 }
 }

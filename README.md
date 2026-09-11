@@ -7,7 +7,7 @@ It is intended for procedural modpack worlds that need a reproducible geography 
 ## Install
 
 1. Install NeoForge 21.1.244 or newer for Minecraft 1.21.1.
-2. Put `boundednotfree-1.3.4.jar` in the server's and clients' `mods` directories.
+2. Put `boundednotfree-1.3.5.jar` in the server's and clients' `mods` directories.
 3. Start once to create `config/boundednotfree/world-layout.json`.
 4. Stop the server, edit that file, set the desired dimensions to `"enabled": true`, then create a new world.
 

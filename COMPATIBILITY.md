@@ -38,6 +38,18 @@ Biolith's injected biome source remains visible to Bounded Not Free through its 
 
 Fabric Biome API attaches the world seed to Minecraft's climate sampler after `RandomState` construction. When Bounded Not Free installs an influenced climate sampler, it copies that optional seed state from the original sampler through Fabric's runtime hook. Forgified Fabric API remains optional and is neither linked nor bundled.
 
+## Genesis world preview
+
+Genesis 1.1.1 on NeoForge 1.21.1 uses the current `config/boundednotfree/world-layout.json` when its Overworld preview starts. Bounded Not Free builds a separate preview plan from the selected seed (including `layoutSalt` or `customLayoutSeed`) and the Create World registries, prepares the same climate influence used during generation, and applies biome constraints after Genesis's own sampling and compatibility fallbacks. Reopening the preview or changing the seed reloads the JSON. Missing or disabled Overworld settings leave the original preview unchanged.
+
+The map reflects outside/void biomes, rim biome selection and influence, required-biome reservations, filters, and macro layouts. Genesis samples at Y=320 and displays biome colors; it does not render terrain height, cave-wall geometry, barriers, block-level dissolve, or structures. Existing worlds retain their normal saved-layout locking. Pre-generation continues through the existing server worldgen hooks.
+
+Genesis is optional and is not bundled. The integration mixins load only on the client, and preview plans are owned by that preview's workers rather than the live server plan registry. Preparing provider-native terrain anchors can add several seconds when opening or reseeding a preview with Tectonic.
+
+Validated in 1.3.5 with Genesis 1.1.1 and Architectury 13.0.11: a real client rendered the configured desert core, plains band, frozen-peaks rim, and void exterior. Automated client checks passed for worker samples and cached map tiles, seed/config refresh, custom layout seeds, biome filters, required-biome reservations, disabled/missing settings, and cleanup. The same checks passed with Tectonic 3.0.26, C2ME 0.4.0-alpha.0.120, Biolith 3.0.14, Regions Unexplored 0.6.2, Lithostitched 1.8.0+beta4, Forgified Fabric API 0.116.15+2.3.3+1.21.1, Supplementaries 3.8.10, Moonlight 3.3.4, and Chunky 1.4.23. An isolated client also started without Genesis. Dedicated-server checks matched 2,809 preview/server biome samples with both vanilla and the modded provider stack, then saved all dimensions and shut down.
+
+The optional harness is in `src/compatTest` and is excluded from the release JAR. Put Genesis and Architectury (plus any provider mods under test) in `run/genesis-compat-client/mods` and `run/genesis-compat-server/mods`. Use an accepted development-server EULA and isolated server properties in the latter directory. Run `gradlew -PcompatTest runGenesisCompatClient`, `gradlew -PcompatTest runGenesisCompatServer`, and `gradlew -PcompatTest runGenesisCompatAbsentClient`. These runs write test fixtures only in their dedicated run directories; the absent-client directory should contain no Genesis JAR. Each task requires an explicit passing result and the client saves `genesis-preview.png` in its run directory. Use a fresh server world when changing the fixture so saved layout locking does not select an earlier configuration.
+
 ## Test matrix through 1.3.1
 
 | Environment | Result |

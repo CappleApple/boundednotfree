@@ -91,3 +91,46 @@ idea {
         downloadJavadoc = true
     }
 }
+
+// Optional integration harness; third-party JARs belong in run/genesis-compat-{client,server}/mods.
+if (providers.gradleProperty('compatTest').isPresent()) {
+    def compatSource = sourceSets.create('compatTest')
+    compatSource.compileClasspath += sourceSets.main.output
+    compatSource.runtimeClasspath += sourceSets.main.output
+    neoForge.addModdingDependenciesTo(compatSource)
+    neoForge.mods {
+        boundednotfree_compat_test { sourceSet(compatSource) }
+    }
+    neoForge.runs {
+        genesisCompatClient {
+            client()
+            sourceSet = compatSource
+            gameDirectory = file('run/genesis-compat-client')
+        }
+        genesisCompatAbsentClient {
+            client()
+            sourceSet = compatSource
+            gameDirectory = file('run/genesis-compat-absent-client')
+        }
+        genesisCompatServer {
+            server()
+            sourceSet = compatSource
+            gameDirectory = file('run/genesis-compat-server')
+            programArgument '--nogui'
+        }
+    }
+}
+
+if (providers.gradleProperty('compatTest').isPresent()) {
+    ['Client': 'client', 'Server': 'server', 'AbsentClient': 'absent-client'].each { side, directory ->
+        def resultFile = layout.projectDirectory.file("run/genesis-compat-${directory}/compat-result.txt").asFile
+        tasks.named("runGenesisCompat${side}") {
+            doFirst { resultFile.delete() }
+            doLast {
+                if (!resultFile.isFile() || !resultFile.text.startsWith('PASS:')) {
+                    throw new GradleException("Compatibility check failed: ${resultFile.isFile() ? resultFile.text : 'no result'}")
+                }
+            }
+        }
+    }
+}

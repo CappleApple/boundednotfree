@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.5 - 2026-09-11
+
+### Added
+
+- Added Genesis world-preview compatibility so the Overworld biome map applies the configured boundary, outside biomes, rim influence, biome filters, required-biome regions, and macro layout with the selected world seed.
+
 ## 1.3.4 - 2026-09-03
 
 ### Fixed

@@ -1,0 +1,7 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="MIT"
+[[mods]]
+modId="boundednotfree_compat_test"
+version="1"
+displayName="Bounded Not Free Compatibility Checks"
