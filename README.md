@@ -1,60 +1,111 @@
 # Bounded Not Free
 
-Bounded Not Free is a server-authoritative NeoForge 1.21.1 world-layout controller. It constrains where biomes and structures may appear and can influence the active provider's climate and density graph so selected rim terrain is generated authentically.
+Bounded Not Free gives modpacks control over the overall shape and geography of generated worlds without requiring a hand-built map.
 
-It is intended for procedural modpack worlds that need a reproducible geography contract: a finite custom shape, a distinct rim, guaranteed biome regions, constrained structures, macro regions, and optional progression zones without shipping a hand-built map.
+It is made for NeoForge 1.21.1 and can limit where terrain, biomes, and structures are allowed to appear. The main use case is a finite or strongly shaped world that still feels naturally generated: continents, rings, islands, progression zones, biome regions, hard edges, cave walls, and similar layouts.
 
-## Install
+## What it can control
 
-1. Install NeoForge 21.1.244 or newer for Minecraft 1.21.1.
-2. Put `boundednotfree-1.3.5.jar` in the server's and clients' `mods` directories.
-3. Start once to create `config/boundednotfree/world-layout.json`.
-4. Stop the server, edit that file, set the desired dimensions to `"enabled": true`, then create a new world.
+- Overworld, Nether, End, and custom dimensions independently.
+- Circle, square, diamond, hexagon, rounded-square, polygon, star, and organic world boundaries.
+- Biome and structure allow/deny rules.
+- Named biome/structure groups and tag selectors.
+- Macro regions and progression-style zones.
+- Several biome layout styles, including radial, continent, Voronoi, climate-band, and archipelago layouts.
+- Separate edge behavior for terrain and biome selection.
+- Void edges, barrier walls, or cave-wall-style rims.
+- World-border shapes that follow the configured playable area.
+- Boundary-aware `/locate` behavior.
+- Portal and cross-dimension destination clamping so travel does not drop players outside the allowed region.
+- Preview export for checking a layout before committing to a world.
 
-The generated default is disabled and conservative. Existing chunks are never rewritten. Keep backups before changing any world-generation configuration.
+Existing chunks are never rewritten, so major layout changes should be treated like other worldgen changes: make a backup and preferably test them on a fresh world first.
 
-## What it supports
+## Getting started
 
-- Independent Overworld, Nether, End, or custom-dimension activation.
-- Circle, square, diamond, hexagon, rounded-square, polygon, star, and deterministic organic boundaries.
-- Separate biome rim, terrain outside mode, and optional square/custom-shape gameplay border.
-- Independent deterministic whole-column dithering and three-dimensional block dissolution for `VOID` edges, with no terrain beyond the nominal boundary.
-- Exact IDs, `#tags`, and named `group:` selectors for biomes and structures.
-- Whitelists/blacklists, deterministic rule precedence, distance/edge/profile/zone constraints, and bounded required-content planning.
-- Vanilla, radial, continent, Voronoi, climate-band, and archipelago biome layouts.
-- Provider-native rim terrain influence with smooth falloff and `PREFER` or `REQUIRE` biome placement.
-- Optional provider-independent `CAVE_WALL` rims that expose a tall rock cross-section with coherent cave pockets and tunnels opening onto the void.
-- Optional full-height, one-block-thick barrier-block walls that follow the exact configured boundary shape.
-- Boundary-aware `/locate structure`, `/locate biome`, and `/locate poi` searches that stop at the active dimension's configured edge.
-- Destination-boundary clamping for Overworld-to-Nether and Nether-to-Overworld portals and cross-dimension teleports.
-- Deterministic saved layout seed/hash, optional per-world plan locking, SVG/JSON preview export, and a read-only Java API.
+1. Install the mod on the server and clients.
+2. Start the game/server once to generate:
+
+```text
+config/boundednotfree/world-layout.json
+```
+
+3. Stop the server and edit the layout.
+4. Enable the dimensions you want Bounded Not Free to control.
+5. Create a new world.
+
+The generated default configuration is intentionally disabled so installing the mod does not silently change world generation.
+
+## Boundaries
+
+A dimension can have its own boundary shape and outside behavior.
+
+For a normal finite world, the simplest setup is usually a circle, square, or rounded square with void outside. More unusual packs can use polygons, stars, or organic boundaries.
+
+Void edges can dissolve rather than ending in a perfectly vertical chunk wall. A pack can instead use a full-height barrier wall or a generated cave-wall rim if that better fits the setting.
+
+## Biomes and regions
+
+Biome rules can reference exact IDs, tags, or named groups. Those rules can then be combined with distance from the center, distance from an edge, macro regions, or progression zones.
+
+The mod tries to work with the active biome provider rather than replacing it wholesale. This matters with large worldgen mods because the goal is to constrain their output while keeping their terrain character intact.
+
+Rim terrain can also bias the provider toward terrain that fits the selected edge biome instead of merely swapping the biome label after terrain has already been chosen.
+
+## Structures
+
+Structure rules use the same general idea as biome rules: exact IDs, tags, groups, zones, and boundary-aware placement constraints.
+
+Structure filtering stays in Minecraft's normal structure-generation path rather than spawning copies afterward, which helps modded structures behave normally when they are allowed.
 
 ## Commands
 
 All commands require permission level 2.
 
-- `/worldlayout info` reports the current boundary metric, edge distance, zone, influence factor, selected climate target, and layout seed.
-- `/worldlayout validate` reports selector and reservation problems.
-- `/worldlayout compat` reports the active generator, biome source, registry sizes, and detected Tectonic, Regions Unexplored, Lithostitched, and TerraBlender mods.
-- `/worldlayout preview` writes SVG and JSON files to `<world>/boundednotfree-previews/`.
+```text
+/worldlayout info
+/worldlayout validate
+/worldlayout compat
+/worldlayout preview
+```
 
-## Architecture and compatibility
+`info` shows the current layout state for your position. `validate` checks selectors and required reservations. `compat` reports the active generator and detected worldgen integrations. `preview` writes SVG and JSON previews to the world folder.
 
-Biome selection delegates to the active generator's original resolver, then applies the configured layout. When a macro region restricts the available biome pool, an already-accepted provider biome is retained; otherwise the nearest candidate is selected from the provider's finalized temperature, humidity, continentalness, erosion, depth, and weirdness parameters. The same region decision constrains terrain-bearing climate fields, so a profile's ocean, lowland, and mountain choices agree with the terrain underneath them. Structure filtering stays inside vanilla's standard structure-start path. For rim influence, the mod reads the finalized multi-noise parameter list after mod/datapack injection and biases terrain-bearing climate fields toward a selected provider-native point. Temperature and humidity remain local so the active biome source can choose associated variants.
+## Compatibility
 
-Vanilla-like generators use direct climate-graph influence. If C2ME has already compiled that graph, the mod recovers C2ME's retained fallback graph, applies the influence in optimizer-visible vanilla density arithmetic, and recompiles it through the installed C2ME runtime. For Tectonic, the mod finds and ranks intact provider-native terrain patches for the chosen biomes, then redirects Tectonic's own continentalness, erosion, and ridge parameter noises inside its original terrain-and-cave graph. This preserves the provider's nonlinear density relationships instead of interpolating two complete final-density fields. Unknown density-decoupled providers use a conservative terrain-noise sampling fallback. The outside-void pass attaches to the generator's post-unlock completion future, preserving C2ME's threaded pipeline. Later writes through `WorldGenRegion` are rejected, and a final new-chunk promotion pass removes any remaining outside blocks or restores barrier columns before the chunk becomes live.
+Bounded Not Free has specific handling for common modern worldgen stacks, including Tectonic and C2ME, while keeping those mods optional.
 
-C2ME's default configuration and its optional density-function compiler support full Tectonic rim and macro terrain. Bounded Not Free understands both the legacy compiler and C2ME 0.4's shared JVM compilation context; if a future compiler API cannot safely recompile the selected influence strategy, the mod preserves the provider's compiled terrain and reports the missing influence instead of risking corruption. No C2ME, Chunky, Tectonic, or Regions Unexplored classes are compiled into or bundled with this mod. Custom non-noise generators and biome sources that do not expose a multi-noise delegate are reported by validation and left unchanged.
+The exact strategy depends on the active generator. Vanilla-like density generators can be influenced directly. Providers with their own terrain model are handled through provider-specific adapters where possible, and unknown generators fall back conservatively instead of forcing assumptions that could corrupt terrain.
 
-See [configuration](docs/CONFIGURATION.md), [API](docs/API.md), [compatibility notes](COMPATIBILITY.md), [examples](examples/README.md), and the honest [deferred-work list](TODO.md).
+Custom generators that do not expose the information BNF needs may only receive the parts of the layout that can be applied safely.
 
-## Build and test
+More technical compatibility notes live in [COMPATIBILITY.md](COMPATIBILITY.md).
 
-Use Java 21:
+## Configuration and examples
+
+- [Configuration reference](docs/CONFIGURATION.md)
+- [Java API](docs/API.md)
+- [Compatibility notes](COMPATIBILITY.md)
+- [Example layouts](examples/README.md)
+- [Known/deferred work](TODO.md)
+
+## Requirements
+
+- Minecraft 1.21.1
+- NeoForge 21.1.244 or newer compatible 21.1 build
+- Java 21
+
+## Building and testing
+
+```bash
+./gradlew test build
+```
+
+Windows:
 
 ```powershell
 .\gradlew.bat test build
 .\gradlew.bat runServer
 ```
 
-The test suite covers all boundary shapes, boundary write policy, barrier-edge selection, rim falloff and cave-wall density behavior, polygon/star validation, and configuration seed/default behavior. Release gates also launch fresh dedicated servers with vanilla, Supplementaries/Moonlight, Tectonic, Regions Unexplored/Lithostitched, and C2ME/Chunky generation stacks.
+The test suite covers the boundary math and major world-edge behaviors. For actual modpack use, previewing a layout and testing it on a fresh world is still strongly recommended.

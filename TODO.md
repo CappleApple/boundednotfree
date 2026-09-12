@@ -1,14 +1,16 @@
-# Intentionally deferred work
+# Roadmap / known limitations
 
-These items are explicit follow-up work, not silent promises of version 1.0:
+These are current limitations or ideas that are intentionally outside the implemented feature set.
 
-- A compatibility-safe floating-island/floating-continent terrain module. `ARCHIPELAGO` currently controls horizontal biome regions only.
-- Guaranteed final starts for weighted multi-entry structure sets and custom generators that do not use vanilla structure placement. Reservations currently constrain eligible standard candidates.
-- Persisted historical structure counts and stronger exact-count enforcement across restarts/existing chunks.
-- True proximity-based `NEAREST_ALLOWED`; the current deterministic allowed-candidate fallback prioritizes safety and reproducibility.
-- Polygon progression zones, named anchors, spawn relocation, inter-structure relationship constraints, and unexplored-chunk replan commands.
-- Datapack-reload revalidation/hot replanning, richer public callbacks/events, and a client GUI.
-- PNG preview and macro-region rendering; the implemented SVG/JSON preview shows the boundary and required-biome reservations.
-- Required-profile-count enforcement and full biome diversity quotas.
-- Direct configuration of named internal terrain-mod density functions. The current implementation instead discovers climate points and uses provider-native graph/sample influence without version-specific links.
-- Representative structure-mod compatibility runs and an older Regions Unexplored/TerraBlender compatibility gate.
+- A dedicated floating-island / floating-continent terrain mode. `ARCHIPELAGO` currently controls horizontal biome regions rather than replacing the terrain generator with islands.
+- Stronger guarantees for weighted multi-entry structure sets and custom structure systems that bypass vanilla placement.
+- Persisted historical structure counts for stricter exact-count planning across restarts and already-generated terrain.
+- A true proximity-based `NEAREST_ALLOWED` selector. The current fallback is deterministic but does not perform a global nearest-biome search.
+- More progression-zone shapes and tools, including polygon zones, named anchors, spawn relocation, and inter-structure relationship rules.
+- Replanning tools for unexplored terrain after datapack/config changes.
+- More public callbacks/events and an optional client configuration/preview UI.
+- PNG/macro-region preview output in addition to the current SVG/JSON preview.
+- Stronger biome-diversity / required-profile quota controls.
+- Optional direct hooks for named internal density functions in specific terrain mods. The current approach prefers provider-native climate/parameter discovery so it does not hardcode private function names for every supported version.
+
+If one of these becomes part of a release, its behavior should be documented in the normal configuration/compatibility docs rather than treated as an implied promise here.

@@ -1,75 +1,128 @@
 # Compatibility notes
 
-## Design boundary
+Bounded Not Free sits around the active world generator rather than replacing it. That makes it work with a fairly broad range of biome/terrain mods, but worldgen mods differ enough internally that the exact terrain-influence path matters.
 
-Bounded Not Free wraps biome candidates supplied to the active `ChunkGenerator`, filters standard structure starts, and post-processes blocks only for `outsideMode: "VOID"` or `gameplayBorder: "BARRIER"`. Rim and macro-layout terrain influence is installed into the active `RandomState` before chunks generate; it does not replace the generator codec, surface rules, carvers, features, or C2ME's chunk scheduler. During later decoration, writes through vanilla's `WorldGenRegion` are rejected only when they would restore a non-air block outside a `VOID` boundary or replace a generated barrier column. The final policy pass runs after biome decoration while the target is still a `ProtoChunk`, before lighting and live-chunk promotion.
+Use `/worldlayout compat` in the target modpack to see which strategy was selected, and `/worldlayout validate` to catch unsupported selectors or generator layouts before pregenerating a world.
 
-Three automatic terrain strategies are used:
+## Where Bounded Not Free hooks worldgen
 
-- `CLIMATE_GRAPH` biases continentalness, erosion, and weirdness wherever the configured rim, reservation, or macro layout applies and the provider reuses those fields in terrain density. Temperature and humidity remain local so the biome source can select associated variants.
-- `PROVIDER_PARAMETERS` handles Tectonic. It redirects only Tectonic's primary continentalness, erosion, and ridge parameter noises to a ranked native patch, inside one original Tectonic density graph. Its nonlinear terrain spline, caves, underground rivers, and lava tunnels therefore retain their native relationships; temperature, vegetation, aquifers, fluid levels, and ore veins remain local.
-- `PROVIDER_SAMPLE` is the conservative fallback for unknown density-decoupled providers. It redirects classified provider terrain-noise leaves to a ranked native patch and keeps independently identified subsurface systems local.
+The mod does four main things:
 
-Both provider-native strategies use a continuous folded coordinate mapping instead of coordinate compression. Tectonic transitions blend the parameter inputs to one density graph; they never interpolate unrelated local and remote final-density values, which can introduce extra solid/air zero crossings and enormous hollow cliffs. Provider transitions are shaped entirely by the density graph; the final boundary pass never fills terrain beneath overhangs or between surface fragments.
+1. constrains biome candidates returned through the active biome source;
+2. filters normal structure starts against the configured layout;
+3. influences terrain/climate inputs where the active generator exposes a usable graph; and
+4. enforces `VOID`/barrier boundaries before generated chunks become live.
 
-The optional `CAVE_WALL` rim style deliberately creates a controlled world-edge cross-section after the safe provider strategy has been selected. It wraps both final density and preliminary surface density with the same provider-independent wall and three-dimensional cave fields, so the exposed rock and cave openings agree without disturbing Tectonic's internal terrain/cave relationship. Runtime reports it as a suffix such as `CLIMATE_GRAPH+CAVE_WALL` or `PROVIDER_PARAMETERS+C2ME_DFC+CAVE_WALL`.
+It does **not** replace the generator codec, surface rules, carvers, features, or an installed chunk scheduler.
 
-The parameter scan understands transparent biome-source wrappers through optional delegate discovery. Current Lithostitched injection is therefore read after Regions Unexplored adds its climate points. There is no compile-time dependency on Tectonic, Regions Unexplored, Lithostitched, C2ME, or Chunky.
+## Terrain influence strategies
+
+The active strategy is reported by `/worldlayout compat`.
+
+### `CLIMATE_GRAPH`
+
+Used for vanilla-like generators where continentalness, erosion, and weirdness are still meaningful terrain inputs. Bounded Not Free biases those fields in the affected region while leaving local temperature/humidity available for biome variants.
+
+### `PROVIDER_PARAMETERS`
+
+Used for Tectonic-style generation where the provider's parameter noises can be redirected without replacing its final density function. Bounded Not Free chooses a native terrain patch for the requested profile and feeds those provider parameters through the original graph.
+
+This keeps Tectonic's own nonlinear terrain, cave, river, and tunnel relationships instead of blending two unrelated final-density fields.
+
+### `PROVIDER_SAMPLE`
+
+Fallback for density-decoupled providers that do not expose the cleaner parameter path. It redirects the provider terrain-noise leaves that can be identified safely and leaves unrelated subsurface systems local.
+
+If a generator cannot be influenced safely, Bounded Not Free reports the limitation rather than trying to patch an unknown graph blindly.
+
+## CAVE_WALL
+
+`CAVE_WALL` is an extra rim style layered on top of the selected provider strategy. It creates an exposed rock cross-section with coherent cave openings at the world edge.
+
+The compatibility report shows it as a suffix, for example:
+
+```text
+CLIMATE_GRAPH+CAVE_WALL
+PROVIDER_PARAMETERS+C2ME_DFC+CAVE_WALL
+```
 
 ## C2ME
 
-C2ME's normal threaded chunk scheduling works with all three strategies. Tectonic uses `PROVIDER_PARAMETERS` with or without C2ME.
+C2ME's normal threaded scheduling is supported.
 
-C2ME's density-function compiler can hide the provider graph behind generated wrappers. Bounded Not Free recovers the retained fallback graph, applies the layout, and recompiles it through either the legacy compiler API or C2ME 0.4's shared `gen.jvm` compilation context. Tectonic can therefore use `PROVIDER_PARAMETERS+C2ME_DFC`, other density-decoupled providers can use `PROVIDER_SAMPLE+C2ME_DFC`, and vanilla-like graphs use `CLIMATE_GRAPH+C2ME_DFC`. If a future C2ME compiler API cannot be called safely, the active compiled provider graph is preserved and the incomplete terrain influence is reported instead of installing a fragmented branch.
+When C2ME's density-function compiler is enabled, the provider graph may be hidden behind generated wrappers. Bounded Not Free uses C2ME's retained fallback graph, applies the layout influence there, and recompiles through the compiler API supported by the installed C2ME version.
 
-## Supplementaries
+The reported strategy gains a `+C2ME_DFC` suffix when that path is active.
 
-Supplementaries does not replace the terrain generator, but it intentionally participates in world generation. It registers structures and placed features such as road signs, cave urns, barnacles, wild flax, and basalt ash. Its road-sign generator can defer work to a block entity, then search structure-start chunks and place the completed sign through `ServerLevel`. Bounded Not Free therefore guards ordinary `WorldGenRegion` writes and performs a final cleanup immediately after biome decoration, before the generation chunk is promoted and can tick.
+If a future C2ME build changes the compiler API in a way the mod cannot safely use, Bounded Not Free keeps the provider's compiled terrain and reports that terrain influence is unavailable rather than installing a partial graph.
+
+## Tectonic
+
+Tectonic uses `PROVIDER_PARAMETERS` when its parameter noises can be identified. Bounded Not Free influences continentalness, erosion, and ridge inputs inside Tectonic's own density graph rather than replacing the graph.
+
+This is the preferred path with or without C2ME.
+
+## Regions Unexplored / Lithostitched / Biolith
+
+Biome-source wrappers are unwrapped when they expose a usable multi-noise delegate. This allows Bounded Not Free to work from the final injected climate points rather than a hardcoded vanilla list.
+
+That is important for stacks such as Regions Unexplored + Lithostitched or Biolith where biome parameters are added after vanilla registration.
+
+If the active biome source cannot be unwrapped to a supported multi-noise source, validation reports it and leaves that source unchanged.
+
+## Supplementaries / Moonlight
+
+Supplementaries adds worldgen features and structures but does not replace the base terrain generator.
+
+Some of its features can place blocks late in decoration, so Bounded Not Free applies its outside-void/barrier policy again before the generated `ProtoChunk` is promoted. This prevents late decorations from leaking across a configured edge.
 
 ## Sable
 
-Sable observes live `LevelChunk.setBlockState` calls and may query neighboring chunks for its physics neighborhood. Bounded Not Free 1.2.1 never performs final boundary cleanup through a live chunk: cleanup runs on the decorated `ProtoChunk`, and an additional runtime guard skips the pass if an alternate scheduler supplies a `LevelChunk`. This avoids synchronous neighbor loads from inside C2ME promotion workers.
+Sable can react to live `LevelChunk` block updates and query neighbors for physics. Boundary cleanup therefore stays on generation-time `ProtoChunk`s instead of mutating live chunks during promotion.
 
-## Biolith
-
-Biolith's injected biome source remains visible to Bounded Not Free through its retained `MultiNoiseBiomeSource` delegate. The exact-pack test with Biolith 3.0.14 discovered all 1,080 active climate points and exercised both vanilla-compatible and Tectonic terrain paths. C2ME 0.4.0-alpha.0.120 automatically disabled its own incompatible End-biome cache when Biolith was present; this is C2ME's compatibility guard, not a Bounded Not Free failure.
+If an alternate scheduler presents a live chunk in a path where cleanup would be unsafe, that pass is skipped rather than forcing synchronous neighbor loads.
 
 ## Forgified Fabric API
 
-Fabric Biome API attaches the world seed to Minecraft's climate sampler after `RandomState` construction. When Bounded Not Free installs an influenced climate sampler, it copies that optional seed state from the original sampler through Fabric's runtime hook. Forgified Fabric API remains optional and is neither linked nor bundled.
+Fabric Biome API can attach world-seed state to Minecraft's climate sampler after `RandomState` construction. When Bounded Not Free wraps that sampler, it copies the optional seed state so downstream biome hooks continue to receive the expected seed.
+
+Forgified Fabric API remains optional and is not bundled.
 
 ## Genesis world preview
 
-Genesis 1.1.1 on NeoForge 1.21.1 uses the current `config/boundednotfree/world-layout.json` when its Overworld preview starts. Bounded Not Free builds a separate preview plan from the selected seed (including `layoutSalt` or `customLayoutSeed`) and the Create World registries, prepares the same climate influence used during generation, and applies biome constraints after Genesis's own sampling and compatibility fallbacks. Reopening the preview or changing the seed reloads the JSON. Missing or disabled Overworld settings leave the original preview unchanged.
+Genesis preview integration is client-only and optional.
 
-The map reflects outside/void biomes, rim biome selection and influence, required-biome reservations, filters, and macro layouts. Genesis samples at Y=320 and displays biome colors; it does not render terrain height, cave-wall geometry, barriers, block-level dissolve, or structures. Existing worlds retain their normal saved-layout locking. Pre-generation continues through the existing server worldgen hooks.
+When available, the preview uses the current Overworld layout config and preview seed to show biome/layout constraints such as:
 
-Genesis is optional and is not bundled. The integration mixins load only on the client, and preview plans are owned by that preview's workers rather than the live server plan registry. Preparing provider-native terrain anchors can add several seconds when opening or reseeding a preview with Tectonic.
+- outside/void biome selection;
+- rim biomes;
+- required-biome reservations;
+- biome filters; and
+- macro layouts.
 
-Validated in 1.3.5 with Genesis 1.1.1 and Architectury 13.0.11: a real client rendered the configured desert core, plains band, frozen-peaks rim, and void exterior. Automated client checks passed for worker samples and cached map tiles, seed/config refresh, custom layout seeds, biome filters, required-biome reservations, disabled/missing settings, and cleanup. The same checks passed with Tectonic 3.0.26, C2ME 0.4.0-alpha.0.120, Biolith 3.0.14, Regions Unexplored 0.6.2, Lithostitched 1.8.0+beta4, Forgified Fabric API 0.116.15+2.3.3+1.21.1, Supplementaries 3.8.10, Moonlight 3.3.4, and Chunky 1.4.23. An isolated client also started without Genesis. Dedicated-server checks matched 2,809 preview/server biome samples with both vanilla and the modded provider stack, then saved all dimensions and shut down.
+Genesis displays biome colors rather than terrain geometry, so it does not preview terrain height, cave-wall cross sections, barriers, block-level dissolve, or structures.
 
-The optional harness is in `src/compatTest` and is excluded from the release JAR. Put Genesis and Architectury (plus any provider mods under test) in `run/genesis-compat-client/mods` and `run/genesis-compat-server/mods`. Use an accepted development-server EULA and isolated server properties in the latter directory. Run `gradlew -PcompatTest runGenesisCompatClient`, `gradlew -PcompatTest runGenesisCompatServer`, and `gradlew -PcompatTest runGenesisCompatAbsentClient`. These runs write test fixtures only in their dedicated run directories; the absent-client directory should contain no Genesis JAR. Each task requires an explicit passing result and the client saves `genesis-preview.png` in its run directory. Use a fresh server world when changing the fixture so saved layout locking does not select an earlier configuration.
+Changing the preview seed or reopening the preview rebuilds its plan. Existing saved-world layout locking is not reused for a new-world preview.
 
-## Test matrix through 1.3.1
+## Structure mods
 
-| Environment | Result |
-| --- | --- |
-| Forgified Fabric API 0.116.15+2.3.3+1.21.1 with the exact Tectonic/C2ME/Biolith/Regions Unexplored/Supplementaries stack below | Fabric Biome API's seed was copied to the influenced climate sampler; a fresh world completed spawn generation, reached `Done`, saved every dimension, and shut down cleanly without the `fabric_getSeed` null-unboxing crash. |
-| NeoForge 21.1.244, vanilla Overworld | `CLIMATE_GRAPH`; fresh dedicated server started and generated the boundary test strip; barrier bottom/top, non-barrier interior, outside void, mountain terrain, and mountain biome assertions passed; clean save and shutdown |
-| Supplementaries 3.8.9 + Moonlight 3.3.4 + C2ME 0.3.0+alpha.0.93 + Chunky 1.4.16 | A fresh radius-384 ocean-only `CONTINENTS` world generated 2,601 chunks in 10 seconds. All 425,385 measured interior columns had an ocean surface at or below Y=68 (95th percentile Y=62; no dry terrain above Y=80), and all 186 wholly outside full chunks contained zero non-air blocks; clean save and shutdown |
-| C2ME 0.3.0+alpha.0.93 density compiler forced on, vanilla Overworld + Chunky 1.4.16 | `CLIMATE_GRAPH+C2ME_DFC`; 1,089 requested chunks completed in 6 seconds; barrier/void and terrain assertions passed; clean save and shutdown |
-| Tectonic 3.0.26 + Lithostitched 1.7.13 + Chunky 1.4.16 | `PROVIDER_SAMPLE`; 1,089 requested chunks completed in 29 seconds; continuous transition, mountain terrain/biome, barrier, and void assertions passed; clean save and shutdown |
-| Tectonic 3.0.26 + Lithostitched 1.7.13 + default C2ME + Chunky 1.4.16 | `PROVIDER_SAMPLE`; the ranked frozen-peaks source patch measured Y=197..280. A fresh 2,601-chunk circle completed in 40 seconds; the full-strength outer rim had median dry terrain Y=272 and 95th percentile Y=300, while all 167 wholly outside full chunks contained zero non-air blocks; clean save and shutdown |
-| Supplementaries + Moonlight + default C2ME + Chunky, `VOID` dither width 64 | A fresh 2,601-chunk circle completed in 8 seconds. The analysis found 35,952 erased columns inside the configured 64-block band and zero non-air blocks in all 167 wholly outside full chunks; clean save and shutdown |
-| Regions Unexplored 0.6.2 + Lithostitched | Uses the climate-graph path; all 1,080 injected parameter points were discovered in the retained compatibility regression, and the user-confirmed 1.0 modpack test generated normally |
-| C2ME 0.4.0-alpha.0.120 + Tectonic 3.0.26 + Lithostitched 1.8.0+beta4 + Biolith 3.0.14 + Regions Unexplored 0.6.2 + Supplementaries 3.8.10 + Moonlight 3.3.4 + Chunky 1.4.23 | `PROVIDER_SAMPLE+C2ME_DFC`; a fresh exact-pack boundary strip completed 169 chunks in 15 seconds. All 5,488 ocean-tagged columns had no dry terrain above Y=80, the selected rim produced mountain terrain, and all 36 wholly outside full chunks contained zero non-air blocks; clean save and shutdown |
-| Same exact stack without Tectonic | `CLIMATE_GRAPH+C2ME_DFC`; a targeted fresh continent/coast strip completed 169 chunks in 1 second. All 3,680 ocean columns had dry terrain at or below Y=61 with no elevated ocean artifact; clean save and shutdown |
-| Exact Tectonic stack, column dither 32 + block dissolve 64 | At Y=64, occupancy was 100% before the dissolve band, approximately 50% through its middle, then 18.5%, 3.0%, 0.1%, and 0% in successive outer eight-block bands. No block was retained outside the nominal boundary. |
-| Exact Tectonic stack, C2ME 0.4.0-alpha.0.120, `VANILLA` layout, both dither widths `0` | `PROVIDER_PARAMETERS+C2ME_DFC`; six Tectonic parameter-noise leaves were influenced inside one provider graph. The ranked frozen-peaks patch measured Y=110..257 (average Y=177.980). A fresh 289-chunk square centered on the eastern rim completed in 3 seconds; layout and compatibility validation passed, all dimensions saved, and the server shut down cleanly. |
-| Same exact Tectonic stack without C2ME | `PROVIDER_PARAMETERS`; the same six parameter-noise leaves and provider patch were selected. A fresh targeted 49-chunk rim square completed in 2 seconds; both validators passed, all dimensions saved, and the server shut down cleanly. |
-| Exact Tectonic + C2ME stack, `CAVE_WALL`, `VANILLA` layout, both dither widths `0` | `PROVIDER_PARAMETERS+C2ME_DFC+CAVE_WALL`; a fresh 289-chunk edge square completed in 4 seconds. At Y=72..176, a loaded cross-section sampled 32 air openings and 206 occupied points on the exposed face, then 41 air openings and 197 occupied points 48 blocks inward. The outside probe was void, both validators passed, and shutdown saved every dimension. |
-| Same `CAVE_WALL` profile with both Tectonic and C2ME disabled | `CLIMATE_GRAPH+CAVE_WALL`; a fresh 289-chunk edge square completed in 6 seconds. The same deterministic cross-section produced the same opening/rock partition counts, the outside probe was void, both validators passed, and shutdown saved every dimension. |
+Structure filtering works with generators that go through Minecraft's standard structure-start path. Mods that create structures through a completely separate placement system may need a dedicated integration.
 
-The 1,089-chunk tests used a fresh 512 by 512 block square centered on the eastern rim. Third-party test JARs are not bundled.
+Reservations constrain eligible candidates; they cannot guarantee a final start for every custom/weighted structure system that bypasses vanilla placement.
 
-Use `/worldlayout compat` and `/worldlayout validate` in the final modpack. Unsupported custom generators, missing selected climate points, or unwrappable non-multi-noise biome sources are reported and left unchanged. Existing chunks are never regenerated.
+## Testing a modpack
+
+Worldgen compatibility is best checked with the actual target stack rather than by assuming that two mods which work separately will behave identically together.
+
+For a new pack:
+
+1. Create a fresh disposable world with the intended worldgen mods.
+2. Run `/worldlayout compat` and `/worldlayout validate`.
+3. Generate a targeted strip across the rim and at least one macro/required-biome region.
+4. Check the outside boundary for leaked blocks/structures.
+5. If using a pregenerator such as Chunky, run a small test radius before committing to the full map.
+6. Save/restart and confirm the same layout seed/plan is retained.
+
+Existing chunks are never regenerated by Bounded Not Free, so worldgen-layout changes should be tested on a fresh world or unexplored area.
+
+Third-party mod JARs are development/runtime dependencies only and are not bundled with Bounded Not Free.
